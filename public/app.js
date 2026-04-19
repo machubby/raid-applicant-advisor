@@ -144,7 +144,9 @@
     if (elements.resetScoreWeights) {
       elements.resetScoreWeights.addEventListener("click", resetScoreWeights);
     }
+
     populateInviteClassFilter();
+
     for (const input of [
       elements.inviteFilterSearch,
       elements.inviteFilterRole,
@@ -159,13 +161,11 @@
         if (state.latestAnalysis) renderRecommendations(state.latestAnalysis);
       });
     }
+
     for (const input of [
       elements.tankTarget,
       elements.healerTarget,
       elements.dpsTarget,
-      elements.bossName,
-      elements.difficulty,
-      elements.metric,
       elements.currentRoster,
       elements.applicants,
       ...scoreWeightInputs(),
@@ -173,6 +173,16 @@
       input.addEventListener("input", () => runAnalysis({ fetchLogs: false }));
       input.addEventListener("change", () => runAnalysis({ fetchLogs: false }));
     }
+
+    for (const input of [
+      elements.bossName,
+      elements.difficulty,
+      elements.metric,
+    ].filter(Boolean)) {
+      input.addEventListener("input", () => runAnalysis({ fetchLogs: state.hasWarcraftLogsCredentials }));
+      input.addEventListener("change", () => runAnalysis({ fetchLogs: state.hasWarcraftLogsCredentials }));
+    }
+
     updateDeclinedUi();
 
     checkServer().then((health) => {
@@ -2015,7 +2025,7 @@
     return order[member.logStatus] || 7;
   }
 
-    function specRangeType(person) {
+  function specRangeType(person) {
     const className = String(person && person.className || "").trim();
     const specName = String(person && person.specName || "").trim();
 
