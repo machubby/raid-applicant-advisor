@@ -1,0 +1,9 @@
+## Interface: 120001
+## Title: Raid Applicant Advisor Exporter
+## Notes: Exports Group Finder applicants and your current roster for Raid Applicant Advisor.
+## Author: Matthew + Codex
+## Version: 0.1.7
+## SavedVariables: RaidApplicantAdvisorExporterDB
+
+RaidApplicantAdvisorExporterDebug.lua
+RaidApplicantAdvisorExporter.lua

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Raid Applicant Advisor</title>
+    <link rel="stylesheet" href="styles.css?v=32">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar">
+        <div>
+          <p class="eyebrow">Retail raid builder</p>
+          <h1>Raid Applicant Advisor</h1>
+        </div>
+        <div class="topbar-status">
+          <div class="server-state" id="serverState">
+            <span class="state-dot"></span>
+            <span>Checking Warcraft Logs</span>
+          </div>
+          <div class="rate-state" id="rateState" title="Warcraft Logs API usage">
+            <span class="usage-dot"></span>
+            <span>API usage unknown</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="control-panel">
+          <div class="panel-section">
+            <div class="section-head">
+              <h2>Target</h2>
+            </div>
+            <div class="comp-grid" aria-label="Target composition">
+              <label>
+                <span>Tanks</span>
+                <input id="tankTarget" type="number" min="0" max="10" value="2">
+              </label>
+              <label>
+                <span>Healers</span>
+                <input id="healerTarget" type="number" min="0" max="10" value="4">
+              </label>
+              <label>
+                <span>DPS</span>
+                <input id="dpsTarget" type="number" min="0" max="30" value="14">
+              </label>
+            </div>
+          </div>
+
+          <div class="panel-section">
+            <div class="section-head">
+              <h2>Encounter</h2>
+            </div>
+            <label class="stacked">
+              <span>Boss</span>
+              <select id="bossName"></select>
+            </label>
+            <input id="encounterId" type="hidden">
+            <label class="stacked">
+              <span>Difficulty</span>
+              <select id="difficulty"></select>
+            </label>
+            <label class="stacked">
+              <span>Metric</span>
+              <select id="metric">
+                <option value="auto">Auto: healers HPS, others DPS</option>
+                <option value="dps">DPS</option>
+                <option value="bossdps">Boss DPS</option>
+                <option value="hps">HPS</option>
+                <option value="tankcombineddps">Tank combined DPS</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="panel-section">
+            <div class="section-head">
+              <h2>Scoring</h2>
+              <button id="resetScoreWeights" type="button" class="secondary-button compact-button">Reset</button>
+            </div>
+            <div class="score-weight-grid">
+              <label>
+                <span>Selected parse</span>
+                <input id="scorePrimaryWeight" type="number" min="0" max="2" step="0.01" value="0.36">
+              </label>
+              <label>
+                <span>Fallback parse</span>
+                <input id="scoreFallbackWeight" type="number" min="0" max="2" step="0.01" value="0.33">
+              </label>
+              <label>
+                <span>Open role</span>
+                <input id="scoreOpenRoleWeight" type="number" min="-50" max="100" step="1" value="18">
+              </label>
+              <label>
+                <span>Role urgency</span>
+                <input id="scoreRoleUrgencyWeight" type="number" min="0" max="25" step="1" value="3">
+              </label>
+              <label>
+                <span>Buffs</span>
+                <input id="scoreBuffWeight" type="number" min="0" max="5" step="0.1" value="1">
+              </label>
+              <label>
+                <span>Full role</span>
+                <input id="scoreFullRolePenalty" type="number" min="-100" max="0" step="1" value="-20">
+              </label>
+              <label>
+                <span>No data</span>
+                <input id="scoreNoDataPenalty" type="number" min="-100" max="0" step="1" value="-14">
+              </label>
+              <label>
+                <span>Kill bonus</span>
+                <input id="scoreKillBonus" type="number" min="0" max="10" step="0.5" value="1">
+              </label>
+            </div>
+          </div>
+        </aside>
+
+        <section class="main-panel">
+          <div class="panel-section import-area">
+            <div class="section-head">
+              <h2>Addon Export</h2>
+              <div class="button-row">
+                <span class="small-stat" id="scoreLabel">Ready</span>
+                <button id="importAddonExport" type="button" class="secondary-button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5zM19 9h-4V3H9v6H5l7 7z"/></svg>
+                  Import + Logs
+                </button>
+              </div>
+            </div>
+            <textarea id="addonExport" spellcheck="false" autocomplete="off"></textarea>
+          </div>
+          <textarea id="currentRoster" hidden></textarea>
+          <textarea id="applicants" hidden></textarea>
+
+          <div class="results-grid">
+            <section class="panel-section recommendations">
+              <div class="section-head">
+                <h2>Applicant Ranking</h2>
+                <div class="button-row">
+                  <span class="small-stat" id="selectionCount">0 applicants</span>
+                  <span class="small-stat" id="declinedCount">0 declined</span>
+                  <button id="clearDeclined" type="button" class="secondary-button compact-button">Clear Declined</button>
+                </div>
+              </div>
+            
+              <div class="invite-filters">
+                <label>
+                  <span>Search</span>
+                  <input id="inviteFilterSearch" type="text" placeholder="Name, spec, class, realm">
+                </label>
+                <label>
+                  <span>Role</span>
+                  <select id="inviteFilterRole">
+                    <option value="">All</option>
+                    <option value="Tank">Tank</option>
+                    <option value="Healer">Healer</option>
+                    <option value="DPS">DPS</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Class</span>
+                  <select id="inviteFilterClass">
+                    <option value="">All</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Min ilvl</span>
+                  <input id="inviteFilterMinIlvl" type="number" min="0" max="999" step="1" placeholder="Any">
+                </label>
+                <label class="filter-toggle">
+                  <input id="inviteFilterFilled" type="checkbox">
+                  <span>Hide filled roles</span>
+                </label>
+              </div>
+            
+              <div id="recommendationsList" class="recommendations-list"></div>
+            </section>
+
+            <section class="panel-section composition">
+              <div class="section-head">
+                <h2>Composition</h2>
+                <span class="small-stat" id="compLabel">2-4-14</span>
+              </div>
+              <div class="role-meters" id="roleMeters"></div>
+              <div class="raid-visual" id="raidVisual" aria-label="Raid slots"></div>
+            </section>
+
+            <section class="panel-section coverage">
+              <div class="section-head">
+                <h2>Buff Coverage</h2>
+                <span class="small-stat" id="coverageLabel">0 covered</span>
+              </div>
+              <div id="buffList" class="buff-list"></div>
+            </section>
+
+            <section class="panel-section roster-stats-panel">
+              <div class="section-head">
+                <h2>Roster Stats</h2>
+                <div class="button-row">
+                  <span class="small-stat" id="rosterStatsLabel">0 members</span>
+                  <button id="fetchRosterLogs" type="button" class="secondary-button compact-button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 8.95 10h-2.02A7 7 0 1 1 12 5v4l5-5-5-5z"/></svg>
+                    Logs
+                  </button>
+                </div>
+              </div>
+              <div id="rosterStats" class="member-table"></div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+    <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
+    <script src="raid-data.js?v=32"></script>
+    <script src="app.js?v=32"></script>
+  </body>
+</html>

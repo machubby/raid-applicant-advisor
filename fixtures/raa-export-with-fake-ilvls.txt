@@ -1,0 +1,35 @@
+RAA_EXPORT_V1
+[ROSTER]
+Blazeedruid-Ragnaros-US,DPS,Druid,,,,,,,,267
+Njpriest-Sargeras-US,Healer,Priest,,,,,,,,259
+Darreck-Arthas-US,DPS,Hunter,,,,,,,,263
+Mehiel-Darkspear-US,DPS,Death Knight,,,,,,,,274
+Brèwsamdi-Mal'Ganis-US,Tank,Monk,,,,,,,,276
+Machubby-Area52-US,DPS,Paladin,Retribution,,,,,,,271
+Luketism-Aman'Thul-US,DPS,Mage,,,,,,,,255
+Kaifadius-Tichondrius-US,DPS,Demon Hunter,,,,,,,,278
+Ropes-Silvermoon-US,DPS,Paladin,,,,,,,,252
+Kennychiwa-Tichondrius-US,DPS,Death Knight,,,,,,,,269
+Fentho-Stormrage-US,DPS,Shaman,,,,,,,,261
+Nathadin-Quel'Thalas-US,Tank,Paladin,,,,,,,,280
+Allyssà-Sargeras-US,DPS,Demon Hunter,,,,,,,,266
+Littlerlarry-Illidan-US,DPS,Death Knight,,,,,,,,258
+Jalatusinho-Ragnaros-US,Healer,Druid,,,,,,,,270
+Balsrage-Area52-US,DPS,Warrior,,,,,,,,257
+Arccad-Dalaran-US,DPS,Death Knight,,,,,,,,273
+Payajum-Ragnaros-US,DPS,Paladin,,,,,,,,254
+[APPLICANTS]
+Dayzo-Sargeras-US,Healer,Druid,Restoration,,,,,,,264,Can flex balance if healing is covered
+Murky-Frostmane-US,DPS,Rogue,Subtlety,,,,,,,251
+Treenutt-Area52-US,DPS,Evoker,Augmentation,,,,,,,275,Aug main with prescience assignments ready
+Rouzerad-Quel'Thalas-US,DPS,Druid,Balance,,,,,,,260
+Lúshan-Quel'Thalas-US,DPS,Paladin,Retribution,,,,,,,268
+Sungjinwaa-Area52-US,DPS,Demon Hunter,Havoc,,,,,,,279,Has gateway weak aura and can call kicks
+Movaria-Illidan-US,DPS,Demon Hunter,Devourer,,,,,,,256
+Banzy-Area52-US,Tank,Death Knight,Unholy,,,,,,,277,Actually applying as blood offspec tank
+Boneheimer-Azralon-US,Healer,Shaman,Restoration,,,,,,,272,Has spirit link planned for second overlap
+Candlepaw-WyrmrestAccord-US,DPS,Mage,Frost,,,,,,,253
+Abirnar-Caelestrasz-US,Tank,Druid,Guardian,,,,,,,265
+Iamfiredup-Area52-US,DPS,Mage,Frost,,,,,,,262
+Slapsixnine-MoonGuard-US,DPS,Mage,Frost,,,,,,,250
+Pwarr-Hakkar-US,Tank,Warrior,Protection,,,,,,,280,Knows route and can lead tank swaps
