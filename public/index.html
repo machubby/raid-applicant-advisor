@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Raid Applicant Advisor</title>
-    <link rel="stylesheet" href="styles.css?v=32">
+    <link rel="stylesheet" href="styles.css?v=41">
   </head>
   <body>
     <main class="app-shell">
@@ -78,60 +78,68 @@
               <button id="resetScoreWeights" type="button" class="secondary-button compact-button">Reset</button>
             </div>
             <div class="score-weight-grid">
-              <label>
-                <span>Selected parse</span>
-                <input id="scorePrimaryWeight" type="number" min="0" max="2" step="0.01" value="0.36">
+              <label title="Importance rank. Ranks 1 and 2 are worth 40% each; ranks 3 and 4 are worth 10% each.">
+                <span>Parses</span>
+                <select id="scoreParseRank">
+                  <option value="1" selected>Rank 1 - 40%</option>
+                  <option value="2">Rank 2 - 40%</option>
+                  <option value="3">Rank 3 - 10%</option>
+                  <option value="4">Rank 4 - 10%</option>
+                </select>
               </label>
-              <label>
-                <span>Fallback parse</span>
-                <input id="scoreFallbackWeight" type="number" min="0" max="2" step="0.01" value="0.33">
+              <label title="Importance rank. Ranks 1 and 2 are worth 40% each; ranks 3 and 4 are worth 10% each.">
+                <span>Boss Kills</span>
+                <select id="scoreKillsRank">
+                  <option value="1">Rank 1 - 40%</option>
+                  <option value="2" selected>Rank 2 - 40%</option>
+                  <option value="3">Rank 3 - 10%</option>
+                  <option value="4">Rank 4 - 10%</option>
+                </select>
               </label>
-              <label>
-                <span>Open role</span>
-                <input id="scoreOpenRoleWeight" type="number" min="-50" max="100" step="1" value="18">
+              <label title="Importance rank. Ranks 1 and 2 are worth 40% each; ranks 3 and 4 are worth 10% each.">
+                <span>Raider.IO 10+ Keys</span>
+                <select id="scoreRaiderIoRank">
+                  <option value="1">Rank 1 - 40%</option>
+                  <option value="2">Rank 2 - 40%</option>
+                  <option value="3" selected>Rank 3 - 10%</option>
+                  <option value="4">Rank 4 - 10%</option>
+                </select>
               </label>
-              <label>
-                <span>Role urgency</span>
-                <input id="scoreRoleUrgencyWeight" type="number" min="0" max="25" step="1" value="3">
-              </label>
-              <label>
-                <span>Buffs</span>
-                <input id="scoreBuffWeight" type="number" min="0" max="5" step="0.1" value="1">
-              </label>
-              <label>
-                <span>Full role</span>
-                <input id="scoreFullRolePenalty" type="number" min="-100" max="0" step="1" value="-20">
-              </label>
-              <label>
-                <span>No data</span>
-                <input id="scoreNoDataPenalty" type="number" min="-100" max="0" step="1" value="-14">
-              </label>
-              <label>
-                <span>Kill bonus</span>
-                <input id="scoreKillBonus" type="number" min="0" max="10" step="0.5" value="1">
+              <label title="Importance rank. Ranks 1 and 2 are worth 40% each; ranks 3 and 4 are worth 10% each.">
+                <span>Team Buffs</span>
+                <select id="scoreBuffRank">
+                  <option value="1">Rank 1 - 40%</option>
+                  <option value="2">Rank 2 - 40%</option>
+                  <option value="3">Rank 3 - 10%</option>
+                  <option value="4" selected>Rank 4 - 10%</option>
+                </select>
               </label>
             </div>
           </div>
         </aside>
 
         <section class="main-panel">
-          <div class="panel-section import-area">
-            <div class="section-head">
-              <h2>Addon Export</h2>
-              <div class="button-row">
-                <span class="small-stat" id="scoreLabel">Ready</span>
-                <button id="importAddonExport" type="button" class="secondary-button">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5zM19 9h-4V3H9v6H5l7 7z"/></svg>
-                  Import + Logs
-                </button>
-              </div>
-            </div>
-            <textarea id="addonExport" spellcheck="false" autocomplete="off"></textarea>
-          </div>
           <textarea id="currentRoster" hidden></textarea>
           <textarea id="applicants" hidden></textarea>
 
           <div class="results-grid">
+            <section class="panel-section composition">
+              <div class="section-head">
+                <h2>Current Composition</h2>
+                <span class="small-stat" id="compLabel">2-4-14</span>
+              </div>
+              <div class="role-meters" id="roleMeters"></div>
+              <div class="raid-visual" id="raidVisual" aria-label="Raid slots"></div>
+            </section>
+
+            <section class="panel-section coverage">
+              <div class="section-head">
+                <h2>Needs</h2>
+                <span class="small-stat" id="coverageLabel">0 covered</span>
+              </div>
+              <div id="buffList" class="buff-list"></div>
+            </section>
+
             <section class="panel-section recommendations">
               <div class="section-head">
                 <h2>Applicant Ranking</h2>
@@ -141,7 +149,7 @@
                   <button id="clearDeclined" type="button" class="secondary-button compact-button">Clear Declined</button>
                 </div>
               </div>
-            
+
               <div class="invite-filters">
                 <label>
                   <span>Search</span>
@@ -167,34 +175,17 @@
                   <input id="inviteFilterMinIlvl" type="number" min="0" max="999" step="1" placeholder="Any">
                 </label>
                 <label class="filter-toggle">
-                  <input id="inviteFilterFilled" type="checkbox">
-                  <span>Hide filled roles</span>
+                  <input id="inviteFilterFilled" type="checkbox" checked>
+                  <span>Needed roles only</span>
                 </label>
               </div>
-            
+
               <div id="recommendationsList" class="recommendations-list"></div>
-            </section>
-
-            <section class="panel-section composition">
-              <div class="section-head">
-                <h2>Composition</h2>
-                <span class="small-stat" id="compLabel">2-4-14</span>
-              </div>
-              <div class="role-meters" id="roleMeters"></div>
-              <div class="raid-visual" id="raidVisual" aria-label="Raid slots"></div>
-            </section>
-
-            <section class="panel-section coverage">
-              <div class="section-head">
-                <h2>Buff Coverage</h2>
-                <span class="small-stat" id="coverageLabel">0 covered</span>
-              </div>
-              <div id="buffList" class="buff-list"></div>
             </section>
 
             <section class="panel-section roster-stats-panel">
               <div class="section-head">
-                <h2>Roster Stats</h2>
+                <h2>Roster Overview</h2>
                 <div class="button-row">
                   <span class="small-stat" id="rosterStatsLabel">0 members</span>
                   <button id="fetchRosterLogs" type="button" class="secondary-button compact-button">
@@ -206,12 +197,29 @@
               <div id="rosterStats" class="member-table"></div>
             </section>
           </div>
+
+          <div class="panel-section import-area is-collapsed" id="addonExportArea">
+            <div class="section-head">
+              <h2>Addon Export</h2>
+              <div class="button-row">
+                <span class="small-stat" id="scoreLabel">Ready</span>
+                <button id="importAddonExport" type="button" class="secondary-button compact-button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5zM19 9h-4V3H9v6H5l7 7z"/></svg>
+                  Import + Logs
+                </button>
+                <button id="toggleAddonExport" type="button" class="secondary-button compact-button">Show</button>
+              </div>
+            </div>
+            <div class="import-body">
+              <textarea id="addonExport" spellcheck="false" autocomplete="off"></textarea>
+            </div>
+          </div>
         </section>
       </section>
     </main>
     <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="raid-data.js?v=32"></script>
-    <script src="app.js?v=32"></script>
+    <script src="raid-data.js?v=33"></script>
+    <script src="app.js?v=41"></script>
   </body>
 </html>

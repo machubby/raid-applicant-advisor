@@ -10,7 +10,7 @@ const PORT = Number(process.env.PORT || 4177);
 const TOKEN_URL = "https://www.warcraftlogs.com/oauth/token";
 const GRAPHQL_URL = "https://www.warcraftlogs.com/api/v2/client";
 const RAIDERIO_CHARACTER_URL = "https://raider.io/api/v1/characters/profile";
-const RANKING_CACHE_TTL_MS = 60 * 60 * 1000;
+const RANKING_CACHE_TTL_MS = 180 * 60 * 1000;
 
 loadDotEnv(path.join(ROOT, ".env"));
 
@@ -369,7 +369,7 @@ async function fetchApplicantRankings(payload) {
   const pageMetric = pageMetricForApplicant(target.metric, rankingApplicant.role);
   const rankings = {};
   const zoneRankings = {};
-  const difficulties = uniqueNumbers([target.difficulty, fallbackDifficulty, 5, 4]);
+  const difficulties = rankingDifficultiesForTarget(target, fallbackDifficulty);
   const encounterTarget = await resolveEncounterTarget(target);
   const encounterId = encounterTarget.encounterId || target.encounterId;
   const zone = encounterTarget.zone;
@@ -399,36 +399,64 @@ async function fetchApplicantRankings(payload) {
     difficulties: {
       mythic: rankings[5] || null,
       heroic: rankings[4] || null,
+      normal: rankings[3] || null,
+      lfr: rankings[2] || null,
     },
+    difficultyRankings: rankingsByDifficulty(rankings),
     zone,
     encounterId,
     character,
     zoneDifficulties: {
       mythic: zoneRankings[5] || null,
       heroic: zoneRankings[4] || null,
+      normal: zoneRankings[3] || null,
+      lfr: zoneRankings[2] || null,
     },
+    zoneDifficultyRankings: rankingsByDifficulty(zoneRankings),
   };
 
   setCachedRanking(cacheKey, result);
   return withCacheInfo(result, false, Math.round(RANKING_CACHE_TTL_MS / 1000));
 }
 
+function rankingDifficultiesForTarget(target, fallbackDifficulty) {
+  const selected = Number(target && target.difficulty) || null;
+  const fallback = Number(fallbackDifficulty) || null;
+  const values = [selected, fallback];
+
+  for (const difficulty of [5, 4, 3, 2]) {
+    if (selected && difficulty > selected) values.push(difficulty);
+  }
+
+  return uniqueNumbers(values);
+}
+
+function rankingsByDifficulty(rankings) {
+  return [5, 4, 3, 2].reduce((byDifficulty, difficulty) => {
+    byDifficulty[String(difficulty)] = rankings[difficulty] || null;
+    return byDifficulty;
+  }, {});
+}
+
 function fillEncounterRankingFromZone(encounterRanking, zoneRanking, encounterId) {
   if (!zoneRanking || !zoneRanking.encounters || !encounterId) return encounterRanking;
-  if (encounterRanking && encounterRanking.percentile !== null && encounterRanking.percentile !== undefined) {
-    return encounterRanking;
-  }
 
   const zoneEncounter = zoneRanking.encounters[String(encounterId)];
   if (!zoneEncounter) return encounterRanking;
 
+  const base = encounterRanking || emptyEncounterRanking("No direct encounter ranking.");
+  const zonePercentile = numberOrNull(zoneEncounter.percentile);
+  const zoneKills = numberOrNull(zoneEncounter.kills);
+  const zoneBestAmount = numberOrNull(zoneEncounter.bestAmount);
+
   return {
-    ...(encounterRanking || emptyEncounterRanking("No direct encounter ranking.")),
-    exists: zoneEncounter.percentile !== null,
-    percentile: zoneEncounter.percentile,
-    kills: zoneEncounter.kills,
-    bestAmount: zoneEncounter.bestAmount,
-    source: "zoneRanking",
+    ...base,
+    exists: Boolean(base.exists || zonePercentile !== null || (zoneKills !== null && zoneKills > 0) || zoneBestAmount !== null),
+    percentile: base.percentile !== null && base.percentile !== undefined ? base.percentile : zonePercentile,
+    kills: zoneKills !== null ? zoneKills : base.kills,
+    bestAmount: base.bestAmount !== null && base.bestAmount !== undefined ? base.bestAmount : zoneBestAmount,
+    medianPercent: numberOrNull(zoneEncounter.medianPercent),
+    zoneSource: "zoneRanking",
   };
 }
 
@@ -588,12 +616,7 @@ async function fetchCharacterMetadata(applicant) {
 }
 
 function shouldFetchRaiderIoMetadata(applicant) {
-  return (
-    numberOrNull(applicant.itemLevel) === null ||
-    !applicant.className ||
-    !applicant.specName ||
-    !applicant.role
-  );
+  return Boolean(applicant.name && applicant.realm && applicant.region);
 }
 
 async function fetchRaiderIoMetadata(applicant) {
@@ -601,7 +624,16 @@ async function fetchRaiderIoMetadata(applicant) {
     region: String(applicant.region || "us").toLowerCase(),
     realm: slugRealm(applicant.realm),
     name: applicant.name,
-    fields: "gear",
+    fields: [
+      "gear",
+      "mythic_plus_scores_by_season:current",
+      "mythic_plus_best_runs:all",
+      "mythic_plus_alternate_runs",
+      "mythic_plus_recent_runs",
+      "mythic_plus_highest_level_runs",
+      "mythic_plus_weekly_highest_level_runs",
+      "mythic_plus_previous_weekly_highest_level_runs",
+    ].join(","),
   });
   const response = await fetch(`${RAIDERIO_CHARACTER_URL}?${params}`, {
     headers: {
@@ -621,6 +653,8 @@ async function fetchRaiderIoMetadata(applicant) {
     specName: body.active_spec_name || null,
     role: roleFromRaiderIo(body.active_spec_role),
     itemLevel: numberOrNull(body.gear && body.gear.item_level_equipped),
+    raiderIoScore: currentRaiderIoScore(body),
+    raiderIoTimedTenPlus: extractTimedTenPlusCount(body),
     profileUrl: body.profile_url || null,
     lastCrawledAt: body.last_crawled_at || null,
     source: "raider.io",
@@ -641,11 +675,105 @@ function buildCharacterMetadata({ applicant, id, name, warcraftLogsClassName, wa
     itemLevelSource: applicantItemLevel !== null ? "addon" : (raiderItemLevel !== null ? "raider.io" : null),
     itemLevelUpdatedAt: applicantItemLevel !== null ? null : (raider && raider.lastCrawledAt) || null,
     raiderIoProfileUrl: (raider && raider.profileUrl) || null,
+    raiderIoScore: raider ? numberOrNull(raider.raiderIoScore) : null,
+    raiderIoTimedTenPlus: raider ? numberOrNull(raider.raiderIoTimedTenPlus) : null,
   };
 
   if (reason) metadata.reason = reason;
   if (raiderMetadata && raiderMetadata.requestError) metadata.raiderIoReason = raiderMetadata.reason;
   return metadata;
+}
+
+function currentRaiderIoScore(body) {
+  const seasons = Array.isArray(body && body.mythic_plus_scores_by_season)
+    ? body.mythic_plus_scores_by_season
+    : [];
+  const current = seasons[0] || {};
+  return firstNumber(
+    current.scores && current.scores.all,
+    current.segments && current.segments.all && current.segments.all.score
+  );
+}
+
+function extractTimedTenPlusCount(body) {
+  const explicit = findTimedTenPlusValue(body);
+  if (explicit !== null) return explicit;
+
+  const seen = new Set();
+  let count = 0;
+  for (const run of collectRaiderIoRuns(body)) {
+    const level = firstNumber(run.mythic_level, run.keystone_level, run.level);
+    if (level === null || level < 10 || !isTimedMythicPlusRun(run)) continue;
+
+    const key = [
+      run.url || run.keystone_run_id || "",
+      run.completed_at || run.completedAt || "",
+      run.dungeon || run.short_name || "",
+      level,
+    ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    count += 1;
+  }
+
+  return count;
+}
+
+function findTimedTenPlusValue(value, seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return null;
+  seen.add(value);
+
+  for (const [key, entry] of Object.entries(value)) {
+    const normalized = key.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const looksLikeTimedTenPlus = (
+      normalized.includes("timed10") ||
+      normalized.includes("timedten") ||
+      normalized.includes("keystonetenplus") ||
+      normalized.includes("keystone10plus")
+    );
+    if (looksLikeTimedTenPlus) {
+      const number = numberOrNull(entry);
+      if (number !== null) return number;
+    }
+  }
+
+  for (const entry of Object.values(value)) {
+    const found = findTimedTenPlusValue(entry, seen);
+    if (found !== null) return found;
+  }
+
+  return null;
+}
+
+function collectRaiderIoRuns(body) {
+  const keys = [
+    "mythic_plus_best_runs",
+    "mythic_plus_alternate_runs",
+    "mythic_plus_recent_runs",
+    "mythic_plus_highest_level_runs",
+    "mythic_plus_weekly_highest_level_runs",
+    "mythic_plus_previous_weekly_highest_level_runs",
+  ];
+  return keys.flatMap((key) => Array.isArray(body && body[key]) ? body[key] : []);
+}
+
+function isTimedMythicPlusRun(run) {
+  const upgrades = firstNumber(run.num_keystone_upgrades, run.keystone_upgrades, run.upgrades);
+  if (upgrades !== null) return upgrades > 0;
+
+  const clearTime = firstNumber(run.clear_time_ms, run.clearTimeMs);
+  const parTime = firstNumber(run.par_time_ms, run.parTimeMs);
+  if (clearTime !== null && parTime !== null) return clearTime <= parTime;
+
+  return false;
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    const number = numberOrNull(value);
+    if (number !== null) return number;
+  }
+  return null;
 }
 
 function roleFromRaiderIo(value) {

@@ -168,31 +168,50 @@ function RaidApplicantAdvisorExporterBuildDebugExport()
   local extraApplicantCount = math.random(3, 8)
   local roster = {}
   local applicants = {}
+  local count = { Tank = 0, Healer = 0, DPS = 0 }
 
   for _, character in ipairs(DEBUG_ANCHOR_CHARACTERS) do
-    if math.random(1, 2) == 1 then
+    local addToRoster = math.random(1, 2) == 1
+    if addToRoster and (character.role == "DPS" or (character.role == "Tank" and count.Tank < 2) or (character.role == "Healer" and count.Healer < 2)) then
       roster[#roster + 1] = DebugCopyCharacter(character)
+      count[character.role] = count[character.role] + 1
     else
       applicants[#applicants + 1] = DebugCopyCharacter(character)
     end
   end
   if #roster == 0 and #applicants > 0 then
     roster[#roster + 1] = table.remove(applicants, 1)
+    count[roster[#roster].role] = count[roster[#roster].role] + 1
   elseif #applicants == 0 and #roster > 0 then
     applicants[#applicants + 1] = table.remove(roster, 1)
+    count[applicants[#applicants].role] = count[applicants[#applicants].role] - 1
   end
 
-  for _, character in ipairs(DebugTakeRandom(DEBUG_FILLER_CHARACTERS, rosterCount - #roster)) do
-    roster[#roster + 1] = character
+  local needed = rosterCount - #roster
+  local fillers = DebugTakeRandom(DEBUG_FILLER_CHARACTERS, needed + extraApplicantCount)
+  local fillerIndex = 1
+  while #roster < rosterCount and fillerIndex <= #fillers do
+    local filler = fillers[fillerIndex]
+    fillerIndex = fillerIndex + 1
+    if filler.role == "DPS" or (filler.role == "Tank" and count.Tank < 2) or (filler.role == "Healer" and count.Healer < 2) then
+      roster[#roster + 1] = DebugCopyCharacter(filler)
+      count[filler.role] = count[filler.role] + 1
+    end
   end
-  for _, character in ipairs(DebugTakeRandom(DEBUG_FILLER_CHARACTERS, extraApplicantCount)) do
-    applicants[#applicants + 1] = character
+  for i = fillerIndex, #fillers do
+    applicants[#applicants + 1] = DebugCopyCharacter(fillers[i])
   end
   DebugShuffle(roster)
   DebugShuffle(applicants)
 
   local lines = {
     "RAA_EXPORT_V1",
+    "[CONTEXT]",
+    "activityName=Chimaerus, the Undreamt God - Heroic",
+    "activityShortName=Heroic Chimaerus",
+    "listingName=Debug Heroic Chimaerus",
+    "difficultyName=Heroic",
+    "groupType=raid",
     "[ROSTER]",
   }
   for index, character in ipairs(roster) do

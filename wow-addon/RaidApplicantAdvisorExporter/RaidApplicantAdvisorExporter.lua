@@ -2,6 +2,7 @@ local ADDON_NAME = ...
 
 local Exporter = {}
 local DB
+local SafeCall
 
 local CLASS_NAMES = {
   DEATHKNIGHT = "Death Knight",
@@ -152,6 +153,117 @@ local function ApplicantNote(applicantData)
   )
 end
 
+local function FormatContextValue(value)
+  value = Trim(value)
+  if value == "" then
+    return ""
+  end
+
+  value = value:gsub("[\r\n\t]+", " ")
+  value = value:gsub("%s+", " ")
+  return Trim(value)
+end
+
+local function AddContextLine(lines, key, value)
+  value = FormatContextValue(value)
+  if value ~= "" then
+    table.insert(lines, key .. "=" .. value)
+  end
+end
+
+local function FirstContextValue(...)
+  for index = 1, select("#", ...) do
+    local value = select(index, ...)
+    if value ~= nil and FormatContextValue(value) ~= "" then
+      return value
+    end
+  end
+
+  return nil
+end
+
+local function ActiveEntryInfo()
+  if not C_LFGList or not C_LFGList.GetActiveEntryInfo then
+    return {}
+  end
+
+  local ok, result1, result2, result3, result4, result5, result6, result7, result8, result9, result10 =
+    SafeCall(C_LFGList.GetActiveEntryInfo)
+  if not ok then
+    return {}
+  end
+
+  if type(result1) == "table" then
+    return result1
+  end
+
+  return {
+    activityID = result1,
+    requiredItemLevel = result2,
+    honorLevel = result3,
+    name = result4,
+    comment = result5,
+    voiceChat = result6,
+    duration = result7,
+    autoAccept = result8,
+    privateGroup = result9,
+    questID = result10,
+  }
+end
+
+local function ActivityInfo(activityID)
+  if not activityID or not C_LFGList then
+    return {}
+  end
+
+  if C_LFGList.GetActivityInfoTable then
+    local ok, activityInfo = SafeCall(C_LFGList.GetActivityInfoTable, activityID)
+    if ok and type(activityInfo) == "table" then
+      return activityInfo
+    end
+  end
+
+  if C_LFGList.GetActivityInfo then
+    local ok, name, shortName, categoryID, groupFinderActivityGroupID, itemLevel, filters, minLevel, maxPlayers,
+      displayType, orderIndex, useHonorLevel, showQuickJoinToast, isMythicPlusActivity, isRatedPvpActivity,
+      isCurrentRaidActivity = SafeCall(C_LFGList.GetActivityInfo, activityID)
+    if ok then
+      return {
+        fullName = name,
+        shortName = shortName,
+        categoryID = categoryID,
+        groupFinderActivityGroupID = groupFinderActivityGroupID,
+        itemLevel = itemLevel,
+        filters = filters,
+        minLevel = minLevel,
+        maxPlayers = maxPlayers,
+        displayType = displayType,
+        orderIndex = orderIndex,
+        useHonorLevel = useHonorLevel,
+        showQuickJoinToast = showQuickJoinToast,
+        isMythicPlusActivity = isMythicPlusActivity,
+        isRatedPvpActivity = isRatedPvpActivity,
+        isCurrentRaidActivity = isCurrentRaidActivity,
+      }
+    end
+  end
+
+  return {}
+end
+
+local function DifficultyName(difficultyID)
+  if not difficultyID or not GetDifficultyInfo then
+    return ""
+  end
+
+  local ok, name = SafeCall(GetDifficultyInfo, difficultyID)
+  if ok then
+    return name
+  end
+
+  return ""
+end
+
 local function BuildLine(name, realm, region, role, className, specName, itemLevel, applicationNote)
   local fields = {
     Trim(name) .. "-" .. NormalizeRealm(realm) .. "-" .. region,
@@ -221,7 +333,7 @@ local function ShouldIncludeApplicant(applicantData)
   return ACTIVE_APPLICANT_STATUS[applicantData.applicationStatus or ""] == true
 end
 
-local function SafeCall(fn, ...)
+function SafeCall(fn, ...)
   local ok, result1, result2, result3, result4, result5, result6, result7, result8, result9, result10, result11, result12,
     result13, result14, result15, result16 = pcall(fn, ...)
   if ok then
@@ -331,14 +443,48 @@ function Exporter:ExportRoster()
   return table.concat(lines, "\n"), "Exported " .. #lines .. " roster member(s)."
 end
 
+function Exporter:ExportContext()
+  local activeEntry = ActiveEntryInfo()
+  local activityID = FirstContextValue(activeEntry.activityID, activeEntry.activityId, activeEntry.activity)
+  local activityInfo = ActivityInfo(activityID)
+  local difficultyID = FirstContextValue(
+    activityInfo.difficultyID,
+    activityInfo.difficultyId,
+    activeEntry.difficultyID,
+    activeEntry.difficultyId
+  )
+  local lines = {}
+  local groupType = IsInRaid() and "raid" or (IsInGroup() and "party" or "solo")
+  local groupSize = GetNumGroupMembers and GetNumGroupMembers() or 1
+
+  AddContextLine(lines, "exportedAt", date and date("!%Y-%m-%dT%H:%M:%SZ") or "")
+  AddContextLine(lines, "groupType", groupType)
+  AddContextLine(lines, "groupSize", groupSize)
+  AddContextLine(lines, "activityId", activityID)
+  AddContextLine(lines, "activityName", FirstContextValue(activityInfo.fullName, activityInfo.name, activityInfo.activityName))
+  AddContextLine(lines, "activityShortName", activityInfo.shortName)
+  AddContextLine(lines, "listingName", FirstContextValue(activeEntry.name, activeEntry.title))
+  AddContextLine(lines, "comment", activeEntry.comment)
+  AddContextLine(lines, "categoryId", activityInfo.categoryID)
+  AddContextLine(lines, "groupFinderActivityGroupId", activityInfo.groupFinderActivityGroupID)
+  AddContextLine(lines, "difficultyId", difficultyID)
+  AddContextLine(lines, "difficultyName", FirstContextValue(activityInfo.difficultyName, DifficultyName(difficultyID)))
+  AddContextLine(lines, "minItemLevel", FirstContextValue(activeEntry.requiredItemLevel, activityInfo.itemLevel))
+
+  return table.concat(lines, "\n")
+end
+
 function Exporter:ExportBoth(options)
   local rosterText, rosterStatus = self:ExportRoster()
   local applicantText, applicantStatus = self:ExportApplicants(options)
+  local contextText = self:ExportContext()
   local rosterCount = rosterText ~= "" and select(2, rosterText:gsub("\n", "\n")) + 1 or 0
   local applicantCount = applicantText ~= "" and select(2, applicantText:gsub("\n", "\n")) + 1 or 0
 
   local text = table.concat({
     "RAA_EXPORT_V1",
+    "[CONTEXT]",
+    contextText,
     "[ROSTER]",
     rosterText,
     "[APPLICANTS]",
@@ -445,6 +591,16 @@ function Exporter:CreateFrame()
   editBox:SetScript("OnEditFocusGained", function(self)
     if self.SetPropagateKeyboardInput then
       self:SetPropagateKeyboardInput(false)
+    end
+  end)
+  editBox:SetScript("OnKeyDown", function(self, key)
+    if key == "C" and IsControlKeyDown() then
+      self:HighlightText()
+      return true
+    end
+    if key == "A" and IsControlKeyDown() then
+      self:HighlightText()
+      return true
     end
   end)
   editBox:SetScript("OnEscapePressed", function(self)

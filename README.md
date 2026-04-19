@@ -48,7 +48,7 @@ Then reload WoW and use:
 /raa debug
 ```
 
-Copy `/raa` output into the website's **Addon Export** box. Pasting a full addon export automatically imports it and fetches logs; **Import + Logs** is still there as a manual retry button. The addon exports names, realms, region, roles, classes, and specs. The website/server handles Warcraft Logs, because WoW addons cannot safely call Warcraft Logs directly.
+Copy `/raa` output into the website's **Addon Export** box. Pasting a full addon export automatically imports it and fetches logs; **Import + Logs** is still there as a manual retry button. The addon exports the active Group Finder context when Blizzard exposes it, plus names, realms, region, roles, classes, and specs. The website uses that context to auto-select obvious raid difficulties such as Mythic, Heroic, Normal, or LFR, and best-effort matches boss names when the listing text includes one. The website/server handles Warcraft Logs, because WoW addons cannot safely call Warcraft Logs directly.
 
 `/raa debug` and the **Load Debug** button load a randomized built-in fake export fixture, which is useful for testing the clipboard bridge without waiting for real applicants. The debug pool always includes Pangar-Area52-US, Zws-Area52-US, Gobblezyn-Area52-US, Steei-Area52-US, and Slapsixnine-MoonGuard-US, using Raider.IO profile data captured on April 19, 2026 for their role, spec, class, and item level. Those characters can appear in either roster or applicants, and notes are randomized.
 
@@ -71,11 +71,11 @@ This project keeps the WoW side inside normal addon boundaries:
 
 The roster from the addon export is kept as internal state for composition, buff coverage, and roster stats. It is not a separate manual input in the UI.
 
-The **Applicant Ranking** panel ranks all applicants and includes the score details in each row. Use **Hide filled roles** to hide applicants for roles that are already full in the current roster, and use **Min ilvl** to filter new addon exports by item level. The gold **Invite pick** badges mark the applicants the current comp-fill pass would invite from the available pool.
+The **Applicant Ranking** panel ranks applicants for roles that are still open in the current roster and includes score details in each row. Turn off **Needed roles only** if you want to inspect applicants for already-filled roles, and use **Min ilvl** to filter new addon exports by item level.
 
 If an export does not include item level, **Import + Logs** attempts to fill it from Raider.IO character profile metadata while fetching Warcraft Logs. Exported addon item levels still win when present.
 
-Use **Decline** on an applicant card to hide that player from scoring and future imports for the current browser session. This is local to the companion website and does not decline them in WoW. The **Scoring** panel under **Encounter** lets you tune parse, role, buff, no-data, and kill-bonus weights live.
+Use **Decline** on an applicant card to hide that player from scoring and future imports for the current browser session. This is local to the companion website and does not decline them in WoW. The **Scoring** panel under **Encounter** lets you rank the relative importance of parses, boss kills, Raider.IO timed +10 runs, and team buffs. The score weight values themselves stay fixed.
 
 When the clipboard bridge receives a fresh in-game export, the website shows a timestamped toast. Warcraft Logs enrichment also adds general raid progression chips such as `3/9M` and `9/9H` when zone kill data is available.
 

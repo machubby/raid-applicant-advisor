@@ -20,7 +20,7 @@ Open your Group Finder listing so you can see applicants, then run:
 /raa
 ```
 
-The addon opens a copyable box with both roster and applicants. Click **Copy**, press `Ctrl+C`, then paste into the website's **Addon Export** field and click **Import**.
+The addon opens a copyable box with the active Group Finder context, roster, and applicants. Click **Copy**, press `Ctrl+C`, then paste into the website's **Addon Export** field and click **Import**.
 
 Separate exports still work:
 
@@ -37,6 +37,17 @@ The export format is:
 ```text
 Name-Realm-Region,Role,Class,Spec
 ```
+
+Full `/raa` exports also include a `[CONTEXT]` section when Blizzard exposes active Group Finder listing data:
+
+```text
+[CONTEXT]
+activityName=Chimaerus, the Undreamt God - Heroic
+difficultyName=Heroic
+listingName=Heroic Chimaerus
+```
+
+The website uses that context to auto-select obvious raid difficulties such as Mythic, Heroic, Normal, or LFR, and best-effort matches boss names when the listing text includes one.
 
 Applicant exports include item level as a trailing field when Group Finder provides it:
 

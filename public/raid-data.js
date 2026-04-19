@@ -56,13 +56,14 @@ window.RAID_DATA = {
     {
       id: "skyfury",
       name: "Skyfury",
-      weight: 7,
+      weight: 10,
       providers: [{ className: "Shaman" }],
     },
     {
       id: "bloodlust",
       name: "Bloodlust",
       weight: 7,
+      desiredCount: 1,
       providers: [
         { className: "Shaman" },
         { className: "Mage" },
@@ -74,6 +75,7 @@ window.RAID_DATA = {
       id: "battle-resurrection",
       name: "Battle Resurrection",
       weight: 7,
+      desiredCount: 2,
       providers: [
         { className: "Death Knight" },
         { className: "Druid" },
@@ -98,6 +100,12 @@ window.RAID_DATA = {
       name: "Devotion Aura",
       weight: 4,
       providers: [{ className: "Paladin" }],
+    },
+    {
+      id: "blessing-of-the-bronze",
+      name: "Blessing of the Bronze",
+      weight: 4,
+      providers: [{ className: "Evoker" }],
     },
     {
       id: "grip",

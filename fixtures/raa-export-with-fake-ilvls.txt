@@ -1,4 +1,10 @@
 RAA_EXPORT_V1
+[CONTEXT]
+activityName=Chimaerus, the Undreamt God - Heroic
+activityShortName=Heroic Chimaerus
+listingName=Heroic Chimaerus
+difficultyName=Heroic
+groupType=raid
 [ROSTER]
 Blazeedruid-Ragnaros-US,DPS,Druid,,,,,,,,267
 Njpriest-Sargeras-US,Healer,Priest,,,,,,,,259
