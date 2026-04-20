@@ -626,7 +626,7 @@
     window.clearTimeout(addonImportTimer);
     addonImportTimer = window.setTimeout(() => {
       const raw = elements.addonExport.value.trim();
-      const looksLikeExport = /\bRAA_EXPORT_V1\b|\[ROSTER\]|\[APPLICANTS\]/i.test(raw);
+      const looksLikeExport = /\bRAA_EXPORT_ESCAPED_V1\b|\bRAA_EXPORT_V1\b|\[ROSTER\]|\[APPLICANTS\]/i.test(raw);
       if (!raw || !looksLikeExport) return;
 
       importAddonExport({ fetchLogs: true, automatic: true });
@@ -634,7 +634,13 @@
   }
 
   function importAddonExport(options = {}) {
-    const parsed = parseAddonExport(elements.addonExport.value);
+    const raw = elements.addonExport.value;
+    const decoded = decodeAddonExport(raw);
+    if (decoded !== raw) {
+      elements.addonExport.value = decoded;
+    }
+
+    const parsed = parseAddonExport(decoded);
     if (!parsed.roster.length && !parsed.applicants.length) {
       setScoreLabel("Paste addon export first");
       return;
@@ -1124,6 +1130,7 @@
   }
 
   function parseAddonExport(raw) {
+    raw = decodeAddonExport(raw);
     const sections = {
       context: {},
       roster: [],
@@ -1161,6 +1168,18 @@
     }
 
     return sections;
+  }
+
+  function decodeAddonExport(raw) {
+    const text = String(raw || "").trim();
+    const match = text.match(/^RAA_EXPORT_ESCAPED_V1:(\S+)$/i);
+    if (!match) return String(raw || "");
+
+    try {
+      return decodeURIComponent(match[1]);
+    } catch (_error) {
+      return String(raw || "");
+    }
   }
 
   function parseContextLine(line) {

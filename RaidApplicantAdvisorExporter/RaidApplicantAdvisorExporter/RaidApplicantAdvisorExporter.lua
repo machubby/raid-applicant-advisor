@@ -1,4 +1,5 @@
 local ADDON_NAME = ...
+local ADDON_VERSION = "0.1.18"
 
 local Exporter = {}
 local DB
@@ -502,6 +503,188 @@ local function CreateButton(parent, text, width, onClick)
   return button
 end
 
+local function CreateExportPanel(parent)
+  local panel = CreateFrame("Frame", nil, parent)
+  panel:SetFrameLevel(parent:GetFrameLevel() + 1)
+
+  local bg = panel:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints()
+  bg:SetColorTexture(0.01, 0.01, 0.01, 0.78)
+
+  local function addLine(pointA, pointB, height, width)
+    local line = panel:CreateTexture(nil, "BORDER")
+    line:SetColorTexture(0.62, 0.48, 0.16, 0.85)
+    line:SetPoint(pointA)
+    line:SetPoint(pointB)
+    if height then
+      line:SetHeight(height)
+    end
+    if width then
+      line:SetWidth(width)
+    end
+  end
+
+  addLine("TOPLEFT", "TOPRIGHT", 1, nil)
+  addLine("BOTTOMLEFT", "BOTTOMRIGHT", 1, nil)
+  addLine("TOPLEFT", "BOTTOMLEFT", nil, 1)
+  addLine("TOPRIGHT", "BOTTOMRIGHT", nil, 1)
+
+  return panel
+end
+
+local function PreviewExportText(text)
+  text = tostring(text or "")
+  if text == "" then
+    return ""
+  end
+
+  local sections = {
+    CONTEXT = {},
+    ROSTER = {},
+    APPLICANTS = {},
+  }
+  local currentSection
+
+  for line in (text .. "\n"):gmatch("(.-)\n") do
+    local section = line:match("^%[(.-)%]$")
+    if section then
+      currentSection = section
+    elseif currentSection and sections[currentSection] then
+      sections[currentSection][#sections[currentSection] + 1] = line
+    end
+  end
+
+  local function cleanLine(line)
+    line = Trim(line)
+    if #line > 96 then
+      line = line:sub(1, 96) .. "..."
+    end
+    return line
+  end
+
+  local function nonEmptyLines(lines)
+    local result = {}
+    for _, line in ipairs(lines) do
+      line = cleanLine(line)
+      if line ~= "" then
+        result[#result + 1] = line
+      end
+    end
+    return result
+  end
+
+  local function contextValue(key)
+    for _, line in ipairs(sections.CONTEXT) do
+      local value = line:match("^" .. key .. "=(.*)$")
+      if value then
+        return cleanLine(value)
+      end
+    end
+    return ""
+  end
+
+  local roster = nonEmptyLines(sections.ROSTER)
+  local applicants = nonEmptyLines(sections.APPLICANTS)
+  local previewLines = {
+    "Export ready. Click Copy for the full text.",
+    "Format: RAA_EXPORT_V1",
+  }
+
+  local listing = contextValue("listingName")
+  local activity = contextValue("activityName")
+  local difficulty = contextValue("difficultyName")
+  if listing ~= "" then
+    previewLines[#previewLines + 1] = "Listing: " .. listing
+  elseif activity ~= "" then
+    previewLines[#previewLines + 1] = "Activity: " .. activity
+  end
+  if difficulty ~= "" then
+    previewLines[#previewLines + 1] = "Difficulty: " .. difficulty
+  end
+
+  previewLines[#previewLines + 1] = ""
+  previewLines[#previewLines + 1] = "Roster: " .. #roster .. " member(s)"
+  for index = 1, math.min(#roster, 8) do
+    previewLines[#previewLines + 1] = "  " .. roster[index]
+  end
+  if #roster > 8 then
+    previewLines[#previewLines + 1] = "  ... " .. (#roster - 8) .. " more roster member(s)"
+  end
+
+  previewLines[#previewLines + 1] = ""
+  previewLines[#previewLines + 1] = "Applicants: " .. #applicants .. " member(s)"
+  if #applicants == 0 then
+    previewLines[#previewLines + 1] = "  No active applicant rows returned right now."
+  else
+    for index = 1, math.min(#applicants, 6) do
+      previewLines[#previewLines + 1] = "  " .. applicants[index]
+    end
+    if #applicants > 6 then
+      previewLines[#previewLines + 1] = "  ... " .. (#applicants - 6) .. " more applicant member(s)"
+    end
+  end
+
+  return table.concat(previewLines, "\n")
+end
+
+local function EncodeExportText(text)
+  text = tostring(text or "")
+  local encoded = text:gsub("([^A-Za-z0-9_%.%-%~])", function(character)
+    return string.format("%%%02X", string.byte(character))
+  end)
+  return "RAA_EXPORT_ESCAPED_V1:" .. encoded
+end
+
+local COPY_POPUP_NAME = "RAA_EXPORT_COPY_POPUP"
+
+local function PopupEditBox(popup)
+  if not popup then
+    return nil
+  end
+
+  return popup.editBox or popup.EditBox
+end
+
+local function EnsureCopyPopup()
+  if not StaticPopupDialogs or StaticPopupDialogs[COPY_POPUP_NAME] then
+    return
+  end
+
+  StaticPopupDialogs[COPY_POPUP_NAME] = {
+    text = "Raid Applicant Advisor export text. Press Ctrl+C, then close this box.",
+    button1 = CLOSE or "Close",
+    hasEditBox = true,
+    editBoxWidth = 640,
+    maxLetters = 999999,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    OnShow = function(popup, data)
+      local editBox = PopupEditBox(popup)
+      if not editBox then
+        return
+      end
+
+      if editBox.SetMultiLine then
+        editBox:SetMultiLine(true)
+      end
+      if editBox.SetMaxLetters then
+        editBox:SetMaxLetters(999999)
+      end
+      editBox:SetAutoFocus(true)
+      editBox:SetText(data or "")
+      editBox:SetFocus()
+      editBox:HighlightText()
+    end,
+    EditBoxOnEnterPressed = function(editBox)
+      editBox:GetParent():Hide()
+    end,
+    EditBoxOnEscapePressed = function(editBox)
+      editBox:GetParent():Hide()
+    end,
+  }
+end
+
 local function DebugFixtureText()
   if type(RaidApplicantAdvisorExporterBuildDebugExport) == "function" then
     local ok, text = pcall(RaidApplicantAdvisorExporterBuildDebugExport)
@@ -534,7 +717,7 @@ function Exporter:CreateFrame()
 
   frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
   frame.title:SetPoint("TOPLEFT", 16, -8)
-  frame.title:SetText("Raid Applicant Advisor Exporter")
+  frame.title:SetText("Raid Applicant Advisor Exporter v" .. ADDON_VERSION)
 
   frame.status = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   frame.status:SetPoint("TOPLEFT", 18, -66)
@@ -567,7 +750,7 @@ function Exporter:CreateFrame()
   refreshButton:SetPoint("LEFT", rosterButton, "RIGHT", 8, 0)
 
   local selectButton = CreateButton(frame, "Copy", 68, function()
-    Exporter:FocusExportText()
+    Exporter:CopyExportText()
   end)
   selectButton:SetPoint("LEFT", refreshButton, "RIGHT", 8, 0)
 
@@ -576,23 +759,81 @@ function Exporter:CreateFrame()
   end)
   debugButton:SetPoint("LEFT", selectButton, "RIGHT", 8, 0)
 
-  local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-  scrollFrame:SetPoint("TOPLEFT", 18, -92)
-  scrollFrame:SetPoint("BOTTOMRIGHT", -34, 18)
+  local exportPanel = CreateExportPanel(frame)
+  exportPanel:SetPoint("TOPLEFT", 18, -92)
+  exportPanel:SetPoint("BOTTOMRIGHT", -34, 18)
 
-  local editBox = CreateFrame("EditBox", nil, scrollFrame)
+  local plainPreview = exportPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  plainPreview:SetPoint("TOPLEFT", exportPanel, "TOPLEFT", 8, -8)
+  plainPreview:SetPoint("BOTTOMRIGHT", exportPanel, "BOTTOMRIGHT", -8, 8)
+  plainPreview:SetJustifyH("LEFT")
+  plainPreview:SetJustifyV("TOP")
+  plainPreview:SetTextColor(1, 0.96, 0.78, 1)
+  plainPreview:SetText("")
+  if plainPreview.SetFont then
+    plainPreview:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 12, "")
+  end
+  if plainPreview.SetSpacing then
+    plainPreview:SetSpacing(3)
+  end
+
+  local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+  scrollFrame:SetFrameLevel(exportPanel:GetFrameLevel() + 1)
+  scrollFrame:SetPoint("TOPLEFT", exportPanel, "TOPLEFT", 8, -8)
+  scrollFrame:SetPoint("BOTTOMRIGHT", exportPanel, "BOTTOMRIGHT", -28, 8)
+
+  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+  scrollChild:SetSize(620, 2000)
+
+  local preview = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  preview:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 4, -4)
+  preview:SetPoint("RIGHT", scrollChild, "RIGHT", -4, 0)
+  preview:SetJustifyH("LEFT")
+  preview:SetJustifyV("TOP")
+  preview:SetTextColor(1, 0.96, 0.78, 1)
+  preview:SetText("")
+  if preview.SetWordWrap then
+    preview:SetWordWrap(true)
+  end
+  if preview.SetNonSpaceWrap then
+    preview:SetNonSpaceWrap(true)
+  end
+
+  local editBox = CreateFrame("EditBox", nil, scrollChild)
   editBox:SetMultiLine(true)
   editBox:SetAutoFocus(false)
-  editBox:SetFontObject(ChatFontNormal)
-  editBox:SetWidth(650)
+  if editBox.SetFont then
+    editBox:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 12, "")
+  else
+    editBox:SetFontObject(GameFontHighlightSmall)
+  end
+  editBox:SetWidth(620)
+  editBox:SetHeight(2000)
+  if editBox.SetMaxLetters then
+    editBox:SetMaxLetters(999999)
+  end
+  editBox:SetFrameLevel(scrollFrame:GetFrameLevel() + 1)
+  editBox:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
+  editBox:SetJustifyH("LEFT")
+  editBox:SetJustifyV("TOP")
+  editBox:SetTextColor(1, 0.96, 0.78, 0.02)
+  editBox:SetAlpha(1)
+  editBox:Show()
+
+  if editBox.SetTextInsets then
+    editBox:SetTextInsets(4, 4, 4, 4)
+  end
+
   if editBox.SetPropagateKeyboardInput then
     editBox:SetPropagateKeyboardInput(false)
   end
+
   editBox:SetScript("OnEditFocusGained", function(self)
     if self.SetPropagateKeyboardInput then
       self:SetPropagateKeyboardInput(false)
     end
   end)
+
   editBox:SetScript("OnKeyDown", function(self, key)
     if key == "C" and IsControlKeyDown() then
       self:HighlightText()
@@ -603,21 +844,165 @@ function Exporter:CreateFrame()
       return true
     end
   end)
+
   editBox:SetScript("OnEscapePressed", function(self)
     self:ClearFocus()
   end)
+
   editBox:SetScript("OnTextChanged", function(self)
+    if Exporter.preview then
+      Exporter.preview:SetText(self:GetText() or "")
+    end
     local parent = self:GetParent()
-    if parent and parent.ScrollBar then
-      parent:UpdateScrollChildRect()
+    local scrollParent = parent and parent:GetParent()
+    if scrollParent and scrollParent.UpdateScrollChildRect then
+      scrollParent:UpdateScrollChildRect()
     end
   end)
 
-  scrollFrame:SetScrollChild(editBox)
+  scrollFrame:SetScrollChild(scrollChild)
+  scrollFrame:SetVerticalScroll(0)
+  scrollFrame:Hide()
 
   self.frame = frame
+  self.scrollFrame = scrollFrame
+  self.scrollChild = scrollChild
+  self.plainPreview = plainPreview
+  self.preview = preview
   self.editBox = editBox
   self.status = frame.status
+end
+
+function Exporter:SetExportText(text)
+  text = tostring(text or "")
+  self.lastExportText = text
+  if DB then
+    DB.lastExport = text
+  end
+
+  if self.preview then
+    self.preview:SetText(text)
+  end
+  if self.plainPreview then
+    self.plainPreview:SetText(PreviewExportText(text))
+    self.plainPreview:Show()
+  end
+
+  if self.editBox then
+    self.editBox:SetText(text)
+    self.editBox:SetCursorPosition(0)
+    self.editBox:SetAlpha(1)
+    self.editBox:Show()
+  end
+
+  local contentHeight = 2000
+  if self.preview and self.preview.GetStringHeight then
+    contentHeight = math.max(contentHeight, (self.preview:GetStringHeight() or 0) + 24)
+  end
+
+  if self.scrollChild then
+    self.scrollChild:SetHeight(contentHeight)
+  end
+  if self.preview then
+    self.preview:SetHeight(contentHeight)
+  end
+  if self.editBox then
+    self.editBox:SetHeight(contentHeight)
+  end
+  if self.scrollFrame then
+    self.scrollFrame:UpdateScrollChildRect()
+    self.scrollFrame:SetVerticalScroll(0)
+  end
+end
+
+function Exporter:CreateCopyFrame()
+  if self.copyFrame then
+    return
+  end
+
+  local frame = CreateFrame("Frame", "RaidApplicantAdvisorExporterCopyFrame", UIParent, "BasicFrameTemplateWithInset")
+  frame:SetSize(760, 190)
+  frame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+  frame:SetFrameStrata("DIALOG")
+  frame:SetMovable(true)
+  frame:EnableMouse(true)
+  frame:RegisterForDrag("LeftButton")
+  frame:SetScript("OnDragStart", frame.StartMoving)
+  frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+  frame:Hide()
+
+  frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+  frame.title:SetPoint("TOPLEFT", 16, -8)
+  frame.title:SetText("Copy Raid Applicant Advisor Export")
+
+  frame.help = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  frame.help:SetPoint("TOPLEFT", 18, -38)
+  frame.help:SetPoint("RIGHT", -18, 0)
+  frame.help:SetJustifyH("LEFT")
+  frame.help:SetText("Press Ctrl+C, then paste this one-line copy code into the website's Addon Export box.")
+
+  local panel = CreateExportPanel(frame)
+  panel:SetPoint("TOPLEFT", 18, -62)
+  panel:SetPoint("BOTTOMRIGHT", -34, 44)
+
+  local editBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+  editBox:SetAutoFocus(false)
+  if editBox.SetFont then
+    editBox:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 12, "")
+  else
+    editBox:SetFontObject(GameFontHighlightSmall)
+  end
+  editBox:SetSize(690, 24)
+  if editBox.SetMaxLetters then
+    editBox:SetMaxLetters(999999)
+  end
+  editBox:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -18)
+  editBox:SetJustifyH("LEFT")
+  editBox:SetTextColor(1, 0.96, 0.78, 1)
+  if editBox.SetPropagateKeyboardInput then
+    editBox:SetPropagateKeyboardInput(false)
+  end
+  editBox:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+    frame:Hide()
+  end)
+
+  frame.note = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  frame.note:SetPoint("TOPLEFT", editBox, "BOTTOMLEFT", 0, -14)
+  frame.note:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
+  frame.note:SetJustifyH("LEFT")
+  frame.note:SetText("It is intentionally one line; the website decodes it back into the normal multiline export.")
+
+  local closeButton = CreateButton(frame, "Close", 88, function()
+    frame:Hide()
+  end)
+  closeButton:SetPoint("BOTTOMRIGHT", -18, 14)
+
+  self.copyFrame = frame
+  self.copyEditBox = editBox
+end
+
+function Exporter:ShowCopyFrame(text)
+  self:CreateCopyFrame()
+  local copyText = EncodeExportText(text)
+  self.copyEditBox:SetText(copyText)
+  self.copyFrame:Show()
+  self.copyEditBox:SetFocus()
+  self.copyEditBox:SetCursorPosition(0)
+  self.copyEditBox:HighlightText()
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0.05, function()
+      if Exporter.copyFrame and Exporter.copyFrame:IsShown() and Exporter.copyEditBox then
+        Exporter.copyEditBox:SetFocus()
+        Exporter.copyEditBox:SetCursorPosition(0)
+        Exporter.copyEditBox:HighlightText()
+      end
+    end)
+  end
+end
+
+function Exporter:HasExportText()
+  return self.lastExportText and self.lastExportText ~= ""
 end
 
 function Exporter:FocusExportText(statusText)
@@ -625,6 +1010,9 @@ function Exporter:FocusExportText(statusText)
     return
   end
 
+  if self.lastExportText then
+    self.editBox:SetText(self.lastExportText)
+  end
   self.editBox:SetFocus()
   self.editBox:SetCursorPosition(0)
   self.editBox:HighlightText()
@@ -643,15 +1031,72 @@ function Exporter:FocusExportText(statusText)
   end
 end
 
+function Exporter:OpenCopyPopup()
+  EnsureCopyPopup()
+  if StaticPopup_Show then
+    StaticPopup_Show(COPY_POPUP_NAME, nil, nil, self.lastExportText or "")
+  end
+end
+
+function Exporter:TrySetClipboard(text)
+  if C_Clipboard and C_Clipboard.SetClipboard then
+    local ok = SafeCall(C_Clipboard.SetClipboard, text)
+    return ok
+  end
+
+  return false
+end
+
+function Exporter:CopyExportText()
+  local text = self.lastExportText or (self.editBox and self.editBox:GetText()) or ""
+  if text == "" then
+    if self.status then
+      self.status:SetText("No export text is loaded yet. Click Applicants, Both, Roster, or Load Debug first.")
+    end
+    return
+  end
+
+  if self:TrySetClipboard(text) then
+    if self.status then
+      self.status:SetText("Export copied to clipboard. Paste it into the website's Addon Export box.")
+    end
+    return
+  end
+
+  self:ShowCopyFrame(text)
+  if self.status then
+    self.status:SetText("Copy window opened. Press Ctrl+C there, then paste into the website.")
+  end
+end
+
+function Exporter:ShowLastExport()
+  RaidApplicantAdvisorExporterDB = RaidApplicantAdvisorExporterDB or {}
+  DB = DB or RaidApplicantAdvisorExporterDB
+
+  self:CreateFrame()
+  local text = self.lastExportText or DB.lastExport or ""
+  self:SetExportText(text)
+  self.frame:Show()
+  if self.status then
+    if text ~= "" then
+      self.status:SetText("Loaded the last saved export. Click Copy, press Ctrl+C, then paste into the website.")
+    else
+      self.status:SetText("No previous export is saved yet. Use /raa while your listing is active.")
+    end
+  end
+end
+
 function Exporter:ShowDebugExport()
   RaidApplicantAdvisorExporterDB = RaidApplicantAdvisorExporterDB or {}
   DB = DB or RaidApplicantAdvisorExporterDB
 
   self:CreateFrame()
   DB.lastMode = "debug"
-  self.editBox:SetText(DebugFixtureText())
+  self:SetExportText(DebugFixtureText())
   self.frame:Show()
-  self:FocusExportText("Loaded randomized debug fixture. Press Ctrl+C now; the clipboard bridge should import it.")
+  if self.status then
+    self.status:SetText("Loaded randomized debug fixture. Click Copy, press Ctrl+C, then paste into the website.")
+  end
 end
 
 function Exporter:ShowExport(mode, options)
@@ -676,7 +1121,16 @@ function Exporter:ShowExport(mode, options)
     text, status = self:ExportBoth(options)
   end
 
-  self.editBox:SetText(text)
+  if options.preserveExistingOnEmpty and Trim(text) == "" and self:HasExportText() then
+    if self.status then
+      self.status:SetText(status .. " Keeping the previous export while Group Finder finishes loading.")
+    end
+    self.frame:Show()
+    return
+  end
+
+  self:SetExportText(text)
+
   local target = "Addon Export"
   if mode == "roster" then
     target = "Roster"
@@ -686,9 +1140,6 @@ function Exporter:ShowExport(mode, options)
 
   self.status:SetText(status .. " Click Copy, press Ctrl+C, then paste into the website's " .. target .. " box.")
   self.frame:Show()
-  if not options.preserveFocus then
-    self:FocusExportText()
-  end
 end
 
 function Exporter:RefreshIfVisible(event)
@@ -724,6 +1175,7 @@ function Exporter:RefreshIfVisible(event)
       Exporter:ShowExport(mode, {
         skipRefresh = true,
         preserveFocus = true,
+        preserveExistingOnEmpty = true,
       })
     end)
 
@@ -790,5 +1242,15 @@ SlashCmdList.RAIDADVISOREXPORTER = function(message)
     return
   end
 
-  Print("Use /raa, /raa applicants, /raa roster, or /raa debug.")
+  if message == "last" or message == "previous" then
+    Exporter:ShowLastExport()
+    return
+  end
+
+  if message == "version" then
+    Print("Version " .. ADDON_VERSION)
+    return
+  end
+
+  Print("Use /raa, /raa applicants, /raa roster, /raa debug, /raa last, or /raa version.")
 end

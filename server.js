@@ -208,7 +208,7 @@ function readClipboardText() {
 }
 
 function looksLikeAddonExport(text) {
-  const normalized = String(text || "");
+  const normalized = normalizeBridgeExport(text);
   if (!/\bRAA_EXPORT_V1\b/i.test(normalized)) return false;
   return /\[(ROSTER|APPLICANTS)\]/i.test(normalized);
 }
@@ -233,11 +233,20 @@ function publishBridgeExport(text, source) {
 }
 
 function normalizeBridgeExport(text) {
-  return String(text || "")
+  const normalized = String(text || "")
     .replace(/^\uFEFF/, "")
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .trim();
+
+  const encodedMatch = normalized.match(/^RAA_EXPORT_ESCAPED_V1:(\S+)$/i);
+  if (!encodedMatch) return normalized;
+
+  try {
+    return decodeURIComponent(encodedMatch[1]).trim();
+  } catch (_error) {
+    return normalized;
+  }
 }
 
 function latestBridgeExportPayload() {
