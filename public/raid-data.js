@@ -1,4 +1,36 @@
 window.RAID_DATA = {
+  raids: [
+    {
+      id: "voidspire",
+      name: "Voidspire",
+      aliases: [
+        "Voidspire",
+        "Voidspire Raid",
+      ],
+      encounterIds: [3176, 3177, 3179, 3178, 3180, 3181],
+    },
+    {
+      id: "the-dreamrift",
+      name: "The Dreamrift",
+      aliases: [
+        "The Dreamrift",
+        "Dreamrift",
+        "Rift of Aln",
+      ],
+      encounterIds: [3306],
+    },
+    {
+      id: "march-on-queldanas",
+      name: "March on Quel'Danas",
+      aliases: [
+        "March on Quel'Danas",
+        "March on Quel Danas",
+        "Quel'Danas",
+        "Quel Danas",
+      ],
+      encounterIds: [3182, 3183],
+    },
+  ],
   difficulties: [
     { id: 5, name: "Mythic", fallback: 4 },
     { id: 4, name: "Heroic", fallback: 3 },
@@ -143,4 +175,58 @@ window.RAID_DATA = {
     "Liora-Proudmoore-US,DPS,Mage,Arcane,29,90",
     "Cael-Stormrage-US,Tank,Druid,Guardian,,76",
   ].join("\n"),
+  mythicPlusDebug: {
+    roster: [
+      {
+        line: "Machubby-Area52-US,DPS,Paladin,Retribution",
+        raiderIoScore: 1380,
+        raiderIoBestTimedLevel: 9,
+        raiderIoKeyRanges: { "2-3": 3, "4-6": 6, "7-9": 4, "10-11": 0, "12-14": 0, "15+": 0 },
+      },
+    ],
+    applicants: [
+      {
+        line: "Vaultfox-Area52-US,DPS,Rogue,Outlaw",
+        raiderIoScore: 410,
+        raiderIoBestTimedLevel: 3,
+        raiderIoKeyRanges: { "2-3": 6, "4-6": 0, "7-9": 0, "10-11": 0, "12-14": 0, "15+": 0 },
+      },
+      {
+        line: "Keymender-Illidan-US,Healer,Shaman,Restoration",
+        raiderIoScore: 940,
+        raiderIoBestTimedLevel: 6,
+        raiderIoKeyRanges: { "2-3": 3, "4-6": 7, "7-9": 0, "10-11": 0, "12-14": 0, "15+": 0 },
+      },
+      {
+        line: "Routebeard-Stormrage-US,Tank,Druid,Guardian",
+        raiderIoScore: 1480,
+        raiderIoBestTimedLevel: 9,
+        raiderIoKeyRanges: { "2-3": 0, "4-6": 5, "7-9": 6, "10-11": 0, "12-14": 0, "15+": 0 },
+      },
+      {
+        line: "Portalpop-Area52-US,DPS,Mage,Fire",
+        raiderIoScore: 1825,
+        raiderIoBestTimedLevel: 11,
+        raiderIoKeyRanges: { "2-3": 0, "4-6": 0, "7-9": 3, "10-11": 6, "12-14": 0, "15+": 0 },
+      },
+      {
+        line: "Tyranitar-Illidan-US,DPS,Warrior,Fury",
+        raiderIoScore: 2230,
+        raiderIoBestTimedLevel: 14,
+        raiderIoKeyRanges: { "2-3": 0, "4-6": 0, "7-9": 0, "10-11": 4, "12-14": 7, "15+": 0 },
+      },
+      {
+        line: "Keylord-Mal'Ganis-US,DPS,Demon Hunter,Havoc",
+        raiderIoScore: 2700,
+        raiderIoBestTimedLevel: 16,
+        raiderIoKeyRanges: { "2-3": 0, "4-6": 0, "7-9": 0, "10-11": 0, "12-14": 4, "15+": 5 },
+      },
+      {
+        line: "Freshalt-Proudmoore-US,DPS,Hunter,Marksmanship",
+        raiderIoScore: 120,
+        raiderIoBestTimedLevel: 2,
+        raiderIoKeyRanges: { "2-3": 1, "4-6": 0, "7-9": 0, "10-11": 0, "12-14": 0, "15+": 0 },
+      },
+    ],
+  },
 };

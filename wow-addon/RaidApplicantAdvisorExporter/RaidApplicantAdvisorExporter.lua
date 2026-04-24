@@ -1,9 +1,14 @@
 local ADDON_NAME = ...
-local ADDON_VERSION = "0.1.18"
+local ADDON_VERSION = "0.1.21"
 
 local Exporter = {}
 local DB
 local SafeCall
+
+local AUTO_COPY_DELAY_SECONDS = 0.45
+local AUTO_COPY_RETRY_SECONDS = 0.75
+local AUTO_COPY_MAX_ATTEMPTS = 3
+local DEBUG_AUTO_INTERVAL_SECONDS = 6
 
 local CLASS_NAMES = {
   DEATHKNIGHT = "Death Knight",
@@ -51,6 +56,13 @@ local ACTIVE_APPLICANT_STATUS = {
 
 local function Print(message)
   DEFAULT_CHAT_FRAME:AddMessage("|cffffc86aRAA Exporter:|r " .. tostring(message))
+end
+
+local function EnsureDB()
+  RaidApplicantAdvisorExporterDB = RaidApplicantAdvisorExporterDB or {}
+  DB = DB or RaidApplicantAdvisorExporterDB
+  DB.lastMode = DB.lastMode or "both"
+  return DB
 end
 
 local function Trim(value)
@@ -128,9 +140,18 @@ local function FormatItemLevel(value)
   return string.format("%.1f", number)
 end
 
+local function IsProtectedTextValue(value)
+  value = Trim(value)
+  return value:match("^|K.*|k$") ~= nil
+end
+
 local function FormatApplicationNote(value)
   value = Trim(value)
   if value == "" then
+    return ""
+  end
+
+  if IsProtectedTextValue(value) then
     return ""
   end
 
@@ -165,10 +186,20 @@ local function FormatContextValue(value)
   return Trim(value)
 end
 
+local function IsProtectedContextValue(value)
+  return IsProtectedTextValue(value)
+end
+
 local function AddContextLine(lines, key, value)
   value = FormatContextValue(value)
-  if value ~= "" then
+  if value ~= "" and not IsProtectedContextValue(value) then
     table.insert(lines, key .. "=" .. value)
+  end
+end
+
+local function AddProtectedContextLine(lines, key, value)
+  if IsProtectedContextValue(value) then
+    table.insert(lines, key .. "=true")
   end
 end
 
@@ -177,6 +208,24 @@ local function FirstContextValue(...)
     local value = select(index, ...)
     if value ~= nil and FormatContextValue(value) ~= "" then
       return value
+    end
+  end
+
+  return nil
+end
+
+local function FirstActivityID(activeEntry)
+  local activityID = FirstContextValue(activeEntry.activityID, activeEntry.activityId, activeEntry.activity)
+  if activityID then
+    return tonumber(activityID) or activityID
+  end
+
+  local activityIDs = activeEntry.activityIDs or activeEntry.activityIds
+  if type(activityIDs) == "table" then
+    for _, value in ipairs(activityIDs) do
+      if value then
+        return tonumber(value) or value
+      end
     end
   end
 
@@ -345,6 +394,72 @@ function SafeCall(fn, ...)
   return false, result1
 end
 
+local function ActiveApplicantKey(applicantID, applicantData)
+  local memberNames = {}
+  local memberCount = applicantData and applicantData.numMembers or 0
+
+  if C_LFGList and C_LFGList.GetApplicantMemberInfo then
+    for memberIndex = 1, memberCount do
+      local memberOk, fullName = SafeCall(C_LFGList.GetApplicantMemberInfo, applicantID, memberIndex)
+      if memberOk and fullName and Trim(fullName) ~= "" then
+        memberNames[#memberNames + 1] = Trim(fullName)
+      end
+    end
+  end
+
+  table.sort(memberNames)
+  if #memberNames > 0 then
+    return tostring(applicantID) .. ":" .. table.concat(memberNames, ";")
+  end
+
+  return tostring(applicantID)
+end
+
+function Exporter:ReadActiveApplicantKeys()
+  local keys = {}
+  local count = 0
+
+  if not C_LFGList or not C_LFGList.GetApplicants or not C_LFGList.GetApplicantInfo then
+    return keys, count
+  end
+
+  local ok, applicants = SafeCall(C_LFGList.GetApplicants)
+  if not ok then
+    return keys, count
+  end
+
+  applicants = applicants or {}
+  for _, applicantID in ipairs(applicants) do
+    local applicantOk, applicantData = SafeCall(C_LFGList.GetApplicantInfo, applicantID)
+    if applicantOk and ShouldIncludeApplicant(applicantData) then
+      keys[ActiveApplicantKey(applicantID, applicantData)] = true
+      count = count + 1
+    end
+  end
+
+  return keys, count
+end
+
+function Exporter:CaptureApplicantBaseline()
+  local keys, count = self:ReadActiveApplicantKeys()
+  self.knownApplicantKeys = keys
+  self.knownApplicantCount = count
+  return count
+end
+
+local function CountNewApplicantKeys(previousKeys, currentKeys)
+  local count = 0
+  previousKeys = previousKeys or {}
+
+  for key in pairs(currentKeys or {}) do
+    if not previousKeys[key] then
+      count = count + 1
+    end
+  end
+
+  return count
+end
+
 function Exporter:ExportApplicants(options)
   options = options or {}
   if not C_LFGList or not C_LFGList.GetApplicants then
@@ -446,7 +561,7 @@ end
 
 function Exporter:ExportContext()
   local activeEntry = ActiveEntryInfo()
-  local activityID = FirstContextValue(activeEntry.activityID, activeEntry.activityId, activeEntry.activity)
+  local activityID = FirstActivityID(activeEntry)
   local activityInfo = ActivityInfo(activityID)
   local difficultyID = FirstContextValue(
     activityInfo.difficultyID,
@@ -457,6 +572,16 @@ function Exporter:ExportContext()
   local lines = {}
   local groupType = IsInRaid() and "raid" or (IsInGroup() and "party" or "solo")
   local groupSize = GetNumGroupMembers and GetNumGroupMembers() or 1
+  local instanceName, instanceType, instanceDifficultyID, instanceDifficultyName = nil, nil, nil, nil
+  if GetInstanceInfo then
+    local ok, name, typeName, difficulty, difficultyName = SafeCall(GetInstanceInfo)
+    if ok then
+      instanceName = name
+      instanceType = typeName
+      instanceDifficultyID = difficulty
+      instanceDifficultyName = difficultyName
+    end
+  end
 
   AddContextLine(lines, "exportedAt", date and date("!%Y-%m-%dT%H:%M:%SZ") or "")
   AddContextLine(lines, "groupType", groupType)
@@ -465,12 +590,18 @@ function Exporter:ExportContext()
   AddContextLine(lines, "activityName", FirstContextValue(activityInfo.fullName, activityInfo.name, activityInfo.activityName))
   AddContextLine(lines, "activityShortName", activityInfo.shortName)
   AddContextLine(lines, "listingName", FirstContextValue(activeEntry.name, activeEntry.title))
+  AddProtectedContextLine(lines, "listingTextProtected", FirstContextValue(activeEntry.name, activeEntry.title))
   AddContextLine(lines, "comment", activeEntry.comment)
+  AddProtectedContextLine(lines, "commentTextProtected", activeEntry.comment)
   AddContextLine(lines, "categoryId", activityInfo.categoryID)
   AddContextLine(lines, "groupFinderActivityGroupId", activityInfo.groupFinderActivityGroupID)
   AddContextLine(lines, "difficultyId", difficultyID)
   AddContextLine(lines, "difficultyName", FirstContextValue(activityInfo.difficultyName, DifficultyName(difficultyID)))
   AddContextLine(lines, "minItemLevel", FirstContextValue(activeEntry.requiredItemLevel, activityInfo.itemLevel))
+  AddContextLine(lines, "instanceName", instanceName)
+  AddContextLine(lines, "instanceType", instanceType)
+  AddContextLine(lines, "instanceDifficultyId", instanceDifficultyID)
+  AddContextLine(lines, "instanceDifficultyName", instanceDifficultyName)
 
   return table.concat(lines, "\n")
 end
@@ -633,6 +764,23 @@ local function EncodeExportText(text)
     return string.format("%%%02X", string.byte(character))
   end)
   return "RAA_EXPORT_ESCAPED_V1:" .. encoded
+end
+
+local function CountExportSectionLines(text, sectionName)
+  text = tostring(text or "")
+  local inSection = false
+  local count = 0
+
+  for line in (text .. "\n"):gmatch("(.-)\n") do
+    local section = line:match("^%[(.-)%]$")
+    if section then
+      inSection = section == sectionName
+    elseif inSection and Trim(line) ~= "" then
+      count = count + 1
+    end
+  end
+
+  return count
 end
 
 local COPY_POPUP_NAME = "RAA_EXPORT_COPY_POPUP"
@@ -939,7 +1087,7 @@ function Exporter:CreateCopyFrame()
   frame.help:SetPoint("TOPLEFT", 18, -38)
   frame.help:SetPoint("RIGHT", -18, 0)
   frame.help:SetJustifyH("LEFT")
-  frame.help:SetText("Press Ctrl+C, then paste this one-line copy code into the website's Addon Export box.")
+  frame.help:SetText("Press Ctrl+C. If the website clipboard bridge is running, it should import automatically.")
 
   local panel = CreateExportPanel(frame)
   panel:SetPoint("TOPLEFT", 18, -62)
@@ -1069,6 +1217,165 @@ function Exporter:CopyExportText()
   end
 end
 
+function Exporter:OpenCopyForText(text, statusText)
+  text = tostring(text or "")
+  if text == "" then
+    return
+  end
+
+  EnsureDB()
+  self:CreateFrame()
+  self:SetExportText(text)
+  self:ShowCopyFrame(text)
+
+  if self.status and self.frame and self.frame:IsShown() and statusText then
+    self.status:SetText(statusText)
+  end
+end
+
+function Exporter:OpenCurrentCopyExport(options)
+  options = options or {}
+  EnsureDB()
+
+  local text, status = self:ExportBoth(options)
+  self:OpenCopyForText(text, status .. " Copy window opened; press Ctrl+C.")
+end
+
+function Exporter:QueueApplicantAutoCopy(newApplicantCount)
+  EnsureDB()
+  if not DB.autoOpenOnApplicants or self.autoCopyQueued then
+    return
+  end
+
+  self.autoCopyQueued = true
+
+  local function openCopy(attempt)
+    attempt = attempt or 1
+    Exporter.autoCopyQueued = false
+    EnsureDB()
+
+    if not DB.autoOpenOnApplicants then
+      return
+    end
+
+    local text, status = Exporter:ExportBoth({ skipRefresh = true })
+    local applicantLines = CountExportSectionLines(text, "APPLICANTS")
+    local expectedApplicantGroups = Exporter.knownApplicantCount or 0
+    if applicantLines < expectedApplicantGroups and expectedApplicantGroups > 0 and attempt < AUTO_COPY_MAX_ATTEMPTS and C_Timer and C_Timer.After then
+      Exporter.autoCopyQueued = true
+      C_Timer.After(AUTO_COPY_RETRY_SECONDS, function()
+        openCopy(attempt + 1)
+      end)
+      return
+    end
+
+    Exporter:OpenCopyForText(
+      text,
+      status .. " New applicant detected (" .. tostring(newApplicantCount) .. "); press Ctrl+C."
+    )
+  end
+
+  if C_Timer and C_Timer.After then
+    C_Timer.After(AUTO_COPY_DELAY_SECONDS, openCopy)
+  else
+    openCopy()
+  end
+end
+
+function Exporter:HandleApplicantListUpdated()
+  EnsureDB()
+
+  if not DB.autoOpenOnApplicants then
+    return
+  end
+
+  local currentKeys, currentCount = self:ReadActiveApplicantKeys()
+
+  if not self.knownApplicantKeys then
+    self.knownApplicantKeys = currentKeys
+    self.knownApplicantCount = currentCount
+    return
+  end
+
+  local newApplicantCount = CountNewApplicantKeys(self.knownApplicantKeys, currentKeys)
+  self.knownApplicantKeys = currentKeys
+  self.knownApplicantCount = currentCount
+
+  if newApplicantCount > 0 then
+    self:QueueApplicantAutoCopy(newApplicantCount)
+  end
+end
+
+function Exporter:SetAutoOpenOnApplicants(enabled)
+  EnsureDB()
+  DB.autoOpenOnApplicants = enabled and true or false
+
+  if DB.autoOpenOnApplicants then
+    local count = self:CaptureApplicantBaseline()
+    Print("Auto-open copy is ON. Current applicant baseline: " .. tostring(count) .. ".")
+  else
+    Print("Auto-open copy is OFF.")
+  end
+end
+
+function Exporter:ShowAutoOpenStatus()
+  EnsureDB()
+  local status = DB.autoOpenOnApplicants and "ON" or "OFF"
+  local baseline = self.knownApplicantCount
+  if baseline == nil then
+    baseline = self:CaptureApplicantBaseline()
+  end
+
+  Print("Auto-open copy is " .. status .. ". Current applicant baseline: " .. tostring(baseline) .. ".")
+end
+
+function Exporter:ShowDebugAutoExport()
+  EnsureDB()
+  DB.lastMode = "debug"
+  self:OpenCopyForText(DebugFixtureText(), "Debug applicant list changed. Press Ctrl+C to test the bridge.")
+end
+
+function Exporter:ScheduleDebugApplicantSimulator(immediate)
+  EnsureDB()
+
+  if not DB.debugApplicantSimulator or self.debugApplicantTimerQueued then
+    return
+  end
+
+  self.debugApplicantTimerQueued = true
+  local delay = immediate and 0.1 or DEBUG_AUTO_INTERVAL_SECONDS
+
+  local function tick()
+    Exporter.debugApplicantTimerQueued = false
+    EnsureDB()
+
+    if not DB.debugApplicantSimulator then
+      return
+    end
+
+    Exporter:ShowDebugAutoExport()
+    Exporter:ScheduleDebugApplicantSimulator(false)
+  end
+
+  if C_Timer and C_Timer.After then
+    C_Timer.After(delay, tick)
+  else
+    tick()
+  end
+end
+
+function Exporter:SetDebugApplicantSimulator(enabled)
+  EnsureDB()
+  DB.debugApplicantSimulator = enabled and true or false
+
+  if DB.debugApplicantSimulator then
+    Print("Debug applicant simulator is ON. It will open a fresh copy box every " .. tostring(DEBUG_AUTO_INTERVAL_SECONDS) .. " seconds.")
+    self:ScheduleDebugApplicantSimulator(true)
+  else
+    Print("Debug applicant simulator is OFF.")
+  end
+end
+
 function Exporter:ShowLastExport()
   RaidApplicantAdvisorExporterDB = RaidApplicantAdvisorExporterDB or {}
   DB = DB or RaidApplicantAdvisorExporterDB
@@ -1095,7 +1402,7 @@ function Exporter:ShowDebugExport()
   self:SetExportText(DebugFixtureText())
   self.frame:Show()
   if self.status then
-    self.status:SetText("Loaded randomized debug fixture. Click Copy, press Ctrl+C, then paste into the website.")
+    self.status:SetText("Loaded debug fixture with stable roster and changing applicants. Click Copy, then press Ctrl+C.")
   end
 end
 
@@ -1206,13 +1513,26 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
       return
     end
 
-    RaidApplicantAdvisorExporterDB = RaidApplicantAdvisorExporterDB or {}
-    DB = RaidApplicantAdvisorExporterDB
-    DB.lastMode = DB.lastMode or "both"
+    EnsureDB()
+    if DB.autoOpenOnApplicants and C_Timer and C_Timer.After then
+      C_Timer.After(1, function()
+        Exporter:CaptureApplicantBaseline()
+      end)
+    elseif DB.autoOpenOnApplicants then
+      Exporter:CaptureApplicantBaseline()
+    end
+
+    if DB.debugApplicantSimulator then
+      Exporter:ScheduleDebugApplicantSimulator(true)
+    end
     return
   end
 
   if DB then
+    if event == "LFG_LIST_APPLICANT_LIST_UPDATED" or event == "LFG_LIST_APPLICANT_UPDATED" then
+      Exporter:HandleApplicantListUpdated()
+    end
+
     Exporter:RefreshIfVisible(event)
   end
 end)
@@ -1221,6 +1541,53 @@ SLASH_RAIDADVISOREXPORTER1 = "/raa"
 SLASH_RAIDADVISOREXPORTER2 = "/raidapplicants"
 SlashCmdList.RAIDADVISOREXPORTER = function(message)
   message = Trim(message):lower()
+  local command, rest = message:match("^(%S*)%s*(.-)$")
+  command = command or ""
+  rest = Trim(rest or "")
+  local restCommand, restArgs = rest:match("^(%S*)%s*(.-)$")
+  restCommand = restCommand or ""
+  restArgs = Trim(restArgs or "")
+
+  if command == "copy" then
+    Exporter:OpenCurrentCopyExport()
+    return
+  end
+
+  if command == "auto" then
+    if rest == "on" or rest == "1" or rest == "true" then
+      Exporter:SetAutoOpenOnApplicants(true)
+    elseif rest == "off" or rest == "0" or rest == "false" then
+      Exporter:SetAutoOpenOnApplicants(false)
+    elseif rest == "status" then
+      Exporter:ShowAutoOpenStatus()
+    else
+      EnsureDB()
+      Exporter:SetAutoOpenOnApplicants(not DB.autoOpenOnApplicants)
+    end
+    return
+  end
+
+  if command == "debugauto" or command == "sim" or (command == "debug" and (restCommand == "auto" or restCommand == "watch" or restCommand == "sim")) then
+    EnsureDB()
+    local debugAutoArg = rest
+    if command == "debug" then
+      debugAutoArg = restArgs
+    end
+
+    if debugAutoArg == "on" or debugAutoArg == "1" or debugAutoArg == "true" then
+      Exporter:SetDebugApplicantSimulator(true)
+    elseif debugAutoArg == "off" or debugAutoArg == "0" or debugAutoArg == "false" then
+      Exporter:SetDebugApplicantSimulator(false)
+    else
+      Exporter:SetDebugApplicantSimulator(not DB.debugApplicantSimulator)
+    end
+    return
+  end
+
+  if command == "debugcopy" or (command == "debug" and (rest == "copy" or rest == "open")) then
+    Exporter:ShowDebugAutoExport()
+    return
+  end
 
   if message == "roster" or message == "group" or message == "raid" then
     Exporter:ShowExport("roster")
@@ -1252,5 +1619,5 @@ SlashCmdList.RAIDADVISOREXPORTER = function(message)
     return
   end
 
-  Print("Use /raa, /raa applicants, /raa roster, /raa debug, /raa last, or /raa version.")
+  Print("Use /raa, /raa copy, /raa auto, /raa applicants, /raa roster, /raa debug, /raa debugauto, /raa last, or /raa version.")
 end

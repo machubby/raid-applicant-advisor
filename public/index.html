@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Raid Applicant Advisor</title>
-    <link rel="stylesheet" href="styles.css?v=41">
+    <link rel="stylesheet" href="styles.css?v=46">
   </head>
   <body>
     <main class="app-shell">
@@ -52,15 +52,40 @@
               <h2>Encounter</h2>
             </div>
             <label class="stacked">
+              <span>Activity</span>
+              <select id="scoreMode">
+                <option value="raid" selected>Raid</option>
+                <option value="mplus">Mythic+</option>
+              </select>
+            </label>
+            <label class="stacked" data-mplus-only hidden>
+              <span>Key Range</span>
+              <select id="mythicPlusRange">
+                <option value="2-3">+2 to +3</option>
+                <option value="4-6">+4 to +6</option>
+                <option value="7-9">+7 to +9</option>
+                <option value="10-11" selected>+10 to +11</option>
+                <option value="12-14">+12 to +14</option>
+                <option value="15+">+15 and up</option>
+              </select>
+            </label>
+            <div class="mode-summary" data-mplus-only hidden>
+              Composite M+ score uses Raider.IO rating, timed key volume, key-level consistency, and peak timed level.
+            </div>
+            <label class="stacked" data-raid-only>
+              <span>Raid</span>
+              <select id="raidName"></select>
+            </label>
+            <label class="stacked" data-raid-only>
               <span>Boss</span>
               <select id="bossName"></select>
             </label>
             <input id="encounterId" type="hidden">
-            <label class="stacked">
+            <label class="stacked" data-raid-only>
               <span>Difficulty</span>
               <select id="difficulty"></select>
             </label>
-            <label class="stacked">
+            <label class="stacked" data-raid-only>
               <span>Metric</span>
               <select id="metric">
                 <option value="auto">Auto: healers HPS, others DPS</option>
@@ -77,7 +102,7 @@
               <h2>Scoring</h2>
               <button id="resetScoreWeights" type="button" class="secondary-button compact-button">Reset</button>
             </div>
-            <div class="score-weight-grid">
+            <div class="score-weight-grid" data-raid-only>
               <label title="Importance rank. Ranks 1 and 2 are worth 40% each; ranks 3 and 4 are worth 10% each.">
                 <span>Parses</span>
                 <select id="scoreParseRank">
@@ -97,7 +122,7 @@
                 </select>
               </label>
               <label title="Importance rank. Ranks 1 and 2 are worth 40% each; ranks 3 and 4 are worth 10% each.">
-                <span>Raider.IO 10+ Keys</span>
+                <span>Raider.IO M+</span>
                 <select id="scoreRaiderIoRank">
                   <option value="1">Rank 1 - 40%</option>
                   <option value="2">Rank 2 - 40%</option>
@@ -114,6 +139,9 @@
                   <option value="4" selected>Rank 4 - 10%</option>
                 </select>
               </label>
+            </div>
+            <div class="mode-summary" data-mplus-only hidden>
+              Mythic+ uses a fixed composite score. Manual parse, kill, and buff weight controls are disabled in this mode.
             </div>
           </div>
         </aside>
@@ -144,10 +172,22 @@
               <div class="section-head">
                 <h2>Applicant Ranking</h2>
                 <div class="button-row">
+                  <span class="small-stat fetch-state" id="fetchState">Ready</span>
                   <span class="small-stat" id="selectionCount">0 applicants</span>
+                  <span class="small-stat" id="acceptedCount">0 accepted</span>
                   <span class="small-stat" id="declinedCount">0 declined</span>
+                  <button id="clearAccepted" type="button" class="secondary-button compact-button">Clear Accepted</button>
                   <button id="clearDeclined" type="button" class="secondary-button compact-button">Clear Declined</button>
+                  <button id="loadMythicPlusDebug" type="button" class="secondary-button compact-button">M+ Debug</button>
                 </div>
+              </div>
+
+              <div class="role-lens" id="roleLens" role="group" aria-label="Applicant role lens">
+                <button type="button" class="is-active" data-role-lens="all">All</button>
+                <button type="button" data-role-lens="needed">Needed</button>
+                <button type="button" data-role-lens="Tank">Tank</button>
+                <button type="button" data-role-lens="Healer">Healer</button>
+                <button type="button" data-role-lens="DPS">DPS</button>
               </div>
 
               <div class="invite-filters">
@@ -155,7 +195,7 @@
                   <span>Search</span>
                   <input id="inviteFilterSearch" type="text" placeholder="Name, spec, class, realm">
                 </label>
-                <label>
+                <label hidden>
                   <span>Role</span>
                   <select id="inviteFilterRole">
                     <option value="">All</option>
@@ -174,12 +214,21 @@
                   <span>Min ilvl</span>
                   <input id="inviteFilterMinIlvl" type="number" min="0" max="999" step="1" placeholder="Any">
                 </label>
-                <label class="filter-toggle">
-                  <input id="inviteFilterFilled" type="checkbox" checked>
+                <label class="filter-toggle" hidden>
+                  <input id="inviteFilterFilled" type="checkbox">
                   <span>Needed roles only</span>
                 </label>
               </div>
 
+              <div class="wanted-class-filter" id="wantedDpsClassFilter" hidden>
+                <div class="wanted-class-filter-head">
+                  <span>DPS Class Filter</span>
+                  <button id="clearWantedDpsClasses" type="button" class="secondary-button compact-button">Clear Filter</button>
+                </div>
+                <div class="wanted-class-filter-chips" id="wantedDpsClassChips" role="group" aria-label="DPS class filter"></div>
+              </div>
+
+              <div id="stickyBestApplicant" class="sticky-best" hidden></div>
               <div id="recommendationsList" class="recommendations-list"></div>
             </section>
 
@@ -219,7 +268,7 @@
     </main>
     <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="raid-data.js?v=33"></script>
-    <script src="app.js?v=41"></script>
+    <script src="raid-data.js?v=36"></script>
+    <script src="app.js?v=68"></script>
   </body>
 </html>

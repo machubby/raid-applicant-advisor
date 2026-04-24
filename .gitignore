@@ -1,2 +1,4 @@
 /.env
 /RaidApplicantAdvisorExporter.zip
+/artifacts/shared-decisions.json
+/artifacts/*.log

@@ -25,6 +25,20 @@ http://127.0.0.1:4177
 
 Credentials are optional. Without them, the app uses the parse numbers included in the applicant input.
 
+To expose the app from your PC through a real HTTPS domain, see:
+
+```text
+PUBLIC_DOMAIN.md
+```
+
+For a temporary no-domain Cloudflare Quick Tunnel, run:
+
+```powershell
+.\scripts\Start-RAA-Share.ps1
+```
+
+It starts the local server if needed, starts the tunnel, prints the exact buddy link, and copies it to your clipboard when possible.
+
 ## WoW Applicant Exporter
 
 The in-game bridge lives here:
@@ -43,14 +57,23 @@ Then reload WoW and use:
 
 ```text
 /raa
+/raa copy
+/raa auto on
 /raa roster
 /raa applicants
 /raa debug
+/raa debugauto
 ```
 
 Copy `/raa` output into the website's **Addon Export** box. Pasting a full addon export automatically imports it and fetches logs; **Import + Logs** is still there as a manual retry button. The addon exports the active Group Finder context when Blizzard exposes it, plus names, realms, region, roles, classes, and specs. The website uses that context to auto-select obvious raid difficulties such as Mythic, Heroic, Normal, or LFR, and best-effort matches boss names when the listing text includes one. The website/server handles Warcraft Logs, because WoW addons cannot safely call Warcraft Logs directly.
 
-`/raa debug` and the **Load Debug** button load a randomized built-in fake export fixture, which is useful for testing the clipboard bridge without waiting for real applicants. The debug pool always includes Pangar-Area52-US, Zws-Area52-US, Gobblezyn-Area52-US, Steei-Area52-US, and Slapsixnine-MoonGuard-US, using Raider.IO profile data captured on April 19, 2026 for their role, spec, class, and item level. Those characters can appear in either roster or applicants, and notes are randomized.
+Some Group Finder listing names/comments are returned to addons as protected tokens such as `|K...|k` rather than readable text. When that happens, the website ignores the protected title/comment and falls back to readable activity context such as the raid name and difficulty. `groupType=party` or `groupType=raid` only describes your current group state; it does not identify the encounter by itself.
+
+When an addon export identifies the raid activity and difficulty but not a specific boss, the website switches the boss selector to **Raid average**. Boss-specific parse/kill cells stay empty, but raid-average and progression data can still score from Warcraft Logs zone rankings.
+
+`/raa copy` opens the one-line copy box directly. `/raa auto on` watches Group Finder applicant changes and automatically opens that copy box when a new active applicant appears; use `/raa auto off` to stop it and `/raa auto status` to check it.
+
+`/raa debug` and the **Load Debug** button load a built-in fake export fixture, which is useful for testing the clipboard bridge without waiting for real applicants. The debug roster stays stable for the current UI session, while applicants change on each debug export. `/raa debugauto` toggles a simulator that opens a fresh debug copy box every few seconds, so you can test the new-applicant workflow with a constant roster. The debug pool always includes Pangar-Area52-US, Zws-Area52-US, Gobblezyn-Area52-US, Steei-Area52-US, and Slapsixnine-MoonGuard-US, using Raider.IO profile data captured on April 19, 2026 for their role, spec, class, and item level.
 
 When the local server is running on Windows, it also starts a clipboard bridge. Copy a fresh `/raa` export in-game and the website will pick it up automatically, import it, and fetch logs. This removes the manual paste step; the browser still needs to be open to the app. To turn the bridge off for a session:
 
@@ -75,9 +98,15 @@ The **Applicant Ranking** panel ranks applicants for roles that are still open i
 
 If an export does not include item level, **Import + Logs** attempts to fill it from Raider.IO character profile metadata while fetching Warcraft Logs. Exported addon item levels still win when present.
 
-Use **Decline** on an applicant card to hide that player from scoring and future imports for the current browser session. This is local to the companion website and does not decline them in WoW. The **Scoring** panel under **Encounter** lets you rank the relative importance of parses, boss kills, Raider.IO timed +10 runs, and team buffs. The score weight values themselves stay fixed.
+Use **Accept** on an applicant card to add that player to the shared server-side roster planner and remove them from the applicant ranking pool for everyone viewing the same server. Use **Decline** to hide that player from scoring and future imports for everyone viewing the same server. Both actions are only planning decisions in the companion website; they do not invite, accept, decline, click, or send anything back into WoW. The **Scoring** panel under **Encounter** lets you rank the relative importance of parses, boss kills, Raider.IO Mythic+ experience, and team buffs. The score weight values themselves stay fixed.
+
+When another browser accepts or declines an applicant, connected browsers show a toast so co-leads can see shared decisions as they happen.
+
+For Mythic+ groups, switch **Scoring > Mode** to **Mythic+ Raider.IO**. In that mode the applicant score is based on Raider.IO instead of raid parses, boss kills, or raid-buff coverage. Use **M+ Range** to scale the score around the key range you are actually running: `+2 to +3`, `+4 to +6`, `+7 to +9`, `+10 to +11`, `+12 to +14`, or `+15 and up`. The **M+ Debug** button loads fixed fake Raider.IO applicants so you can test the range behavior without spending API calls.
 
 When the clipboard bridge receives a fresh in-game export, the website shows a timestamped toast. Warcraft Logs enrichment also adds general raid progression chips such as `3/9M` and `9/9H` when zone kill data is available.
+
+Warcraft Logs raid-zone ranking data is cached per character, zone, difficulty, and metric. After the first pull for a raid, swapping between bosses in that same raid should reuse the cached zone data instead of spending fresh API points for every boss selection.
 
 ## Applicant Format
 

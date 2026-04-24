@@ -79,6 +79,7 @@ local DEBUG_NOTES = {
 
 local debugRunCounter = 0
 local debugRandomSeeded = false
+local debugRosterCharacters = nil
 
 local function DebugSeedRandom()
   if debugRandomSeeded then
@@ -136,11 +137,11 @@ local function DebugTakeRandom(source, count)
   return selected
 end
 
-local function DebugLine(character, runId, index)
+local function DebugLine(character, runId, index, stableNote)
   local specName = character.specName or DebugPick(character.specs or { "" })
   local itemLevel = tostring(character.itemLevel or math.random(250, 280))
-  local note = DebugPick(DEBUG_NOTES)
-  if index == 1 then
+  local note = stableNote and "debug stable roster" or DebugPick(DEBUG_NOTES)
+  if not stableNote and index == 1 then
     note = note .. " debug batch " .. tostring(runId)
   end
 
@@ -160,49 +161,113 @@ local function DebugLine(character, runId, index)
   }, ",")
 end
 
-function RaidApplicantAdvisorExporterBuildDebugExport()
-  DebugSeedRandom()
-  debugRunCounter = debugRunCounter + 1
+local function DebugCharacterKey(character)
+  return tostring(character.name or "") .. "-" .. tostring(character.realm or "") .. "-" .. tostring(character.region or "US")
+end
 
-  local rosterCount = math.random(10, 16)
-  local extraApplicantCount = math.random(3, 8)
-  local roster = {}
-  local applicants = {}
-  local count = { Tank = 0, Healer = 0, DPS = 0 }
-
-  for _, character in ipairs(DEBUG_ANCHOR_CHARACTERS) do
-    local addToRoster = math.random(1, 2) == 1
-    if addToRoster and (character.role == "DPS" or (character.role == "Tank" and count.Tank < 2) or (character.role == "Healer" and count.Healer < 2)) then
-      roster[#roster + 1] = DebugCopyCharacter(character)
-      count[character.role] = count[character.role] + 1
-    else
-      applicants[#applicants + 1] = DebugCopyCharacter(character)
-    end
+local function DebugAddRosterCharacter(roster, count, character)
+  if character.role ~= "DPS" and character.role ~= "Tank" and character.role ~= "Healer" then
+    return false
   end
-  if #roster == 0 and #applicants > 0 then
-    roster[#roster + 1] = table.remove(applicants, 1)
-    count[roster[#roster].role] = count[roster[#roster].role] + 1
-  elseif #applicants == 0 and #roster > 0 then
-    applicants[#applicants + 1] = table.remove(roster, 1)
-    count[applicants[#applicants].role] = count[applicants[#applicants].role] - 1
+
+  if character.role == "Tank" and count.Tank >= 2 then
+    return false
+  end
+
+  if character.role == "Healer" and count.Healer >= 4 then
+    return false
+  end
+
+  local copy = DebugCopyCharacter(character)
+  copy.specName = copy.specName or DebugPick(copy.specs or { "" })
+  copy.itemLevel = copy.itemLevel or math.random(250, 280)
+  roster[#roster + 1] = copy
+  count[character.role] = count[character.role] + 1
+  return true
+end
+
+local function DebugBuildStableRoster()
+  if debugRosterCharacters then
+    return debugRosterCharacters
+  end
+
+  DebugSeedRandom()
+
+  local rosterCount = 14
+  local roster = {}
+  local count = { Tank = 0, Healer = 0, DPS = 0 }
+  local anchors = DebugTakeRandom(DEBUG_ANCHOR_CHARACTERS, #DEBUG_ANCHOR_CHARACTERS)
+
+  for _, character in ipairs(anchors) do
+    if #roster < rosterCount then
+      DebugAddRosterCharacter(roster, count, character)
+    end
   end
 
   local needed = rosterCount - #roster
-  local fillers = DebugTakeRandom(DEBUG_FILLER_CHARACTERS, needed + extraApplicantCount)
+  local fillers = DebugTakeRandom(DEBUG_FILLER_CHARACTERS, needed + 8)
   local fillerIndex = 1
   while #roster < rosterCount and fillerIndex <= #fillers do
     local filler = fillers[fillerIndex]
     fillerIndex = fillerIndex + 1
-    if filler.role == "DPS" or (filler.role == "Tank" and count.Tank < 2) or (filler.role == "Healer" and count.Healer < 2) then
-      roster[#roster + 1] = DebugCopyCharacter(filler)
-      count[filler.role] = count[filler.role] + 1
+    DebugAddRosterCharacter(roster, count, filler)
+  end
+
+  if #roster == 0 then
+    roster[#roster + 1] = DebugCopyCharacter(DEBUG_ANCHOR_CHARACTERS[1])
+  end
+
+  DebugShuffle(roster)
+
+  debugRosterCharacters = roster
+  return debugRosterCharacters
+end
+
+local function DebugBuildChangingApplicants(roster, runId)
+  local rosterKeys = {}
+  local pool = {}
+  local applicantCount = math.random(3, 7)
+
+  for _, character in ipairs(roster or {}) do
+    rosterKeys[DebugCharacterKey(character)] = true
+  end
+
+  local function addPoolCharacters(source)
+    for _, character in ipairs(source) do
+      if not rosterKeys[DebugCharacterKey(character)] then
+        pool[#pool + 1] = DebugCopyCharacter(character)
+      end
     end
   end
-  for i = fillerIndex, #fillers do
-    applicants[#applicants + 1] = DebugCopyCharacter(fillers[i])
-  end
-  DebugShuffle(roster)
+
+  addPoolCharacters(DEBUG_ANCHOR_CHARACTERS)
+  addPoolCharacters(DEBUG_FILLER_CHARACTERS)
+
+  local applicants = DebugTakeRandom(pool, applicantCount)
+  applicants[#applicants + 1] = {
+    name = "Debugapp" .. tostring(runId),
+    realm = "Area52",
+    region = "US",
+    role = (runId % 5 == 0) and "Healer" or "DPS",
+    className = (runId % 5 == 0) and "Priest" or "Hunter",
+    specName = (runId % 5 == 0) and "Holy" or "Survival",
+    itemLevel = 260 + (runId % 18),
+  }
+
   DebugShuffle(applicants)
+  return applicants
+end
+
+function RaidApplicantAdvisorExporterResetDebugRoster()
+  debugRosterCharacters = nil
+end
+
+function RaidApplicantAdvisorExporterBuildDebugExport()
+  DebugSeedRandom()
+  debugRunCounter = debugRunCounter + 1
+
+  local roster = DebugBuildStableRoster()
+  local applicants = DebugBuildChangingApplicants(roster, debugRunCounter)
 
   local lines = {
     "RAA_EXPORT_V1",
@@ -215,7 +280,7 @@ function RaidApplicantAdvisorExporterBuildDebugExport()
     "[ROSTER]",
   }
   for index, character in ipairs(roster) do
-    lines[#lines + 1] = DebugLine(character, debugRunCounter, index)
+    lines[#lines + 1] = DebugLine(character, debugRunCounter, index, true)
   end
 
   lines[#lines + 1] = "[APPLICANTS]"
