@@ -1,5 +1,5 @@
 local ADDON_NAME = ...
-local ADDON_VERSION = "0.1.21"
+local ADDON_VERSION = "0.1.22"
 
 local Exporter = {}
 local DB
@@ -766,6 +766,15 @@ local function EncodeExportText(text)
   return "RAA_EXPORT_ESCAPED_V1:" .. encoded
 end
 
+local function EncodedExportTextOrEmpty(text)
+  text = tostring(text or "")
+  if text == "" then
+    return ""
+  end
+
+  return EncodeExportText(text)
+end
+
 local function CountExportSectionLines(text, sectionName)
   text = tostring(text or "")
   local inSection = false
@@ -854,7 +863,7 @@ function Exporter:CreateFrame()
   end
 
   local frame = CreateFrame("Frame", "RaidApplicantAdvisorExporterFrame", UIParent, "BasicFrameTemplateWithInset")
-  frame:SetSize(720, 480)
+  frame:SetSize(720, 552)
   frame:SetPoint("CENTER")
   frame:SetMovable(true)
   frame:EnableMouse(true)
@@ -871,7 +880,7 @@ function Exporter:CreateFrame()
   frame.status:SetPoint("TOPLEFT", 18, -66)
   frame.status:SetPoint("RIGHT", -18, 0)
   frame.status:SetJustifyH("LEFT")
-  frame.status:SetText("Choose what to export, then click Copy and press Ctrl+C.")
+  frame.status:SetText("Choose what to export. The live bridge text below updates in place; click Copy or press Ctrl+C there.")
 
   local applicantsButton = CreateButton(frame, "Applicants", 96, function()
     Exporter:ShowExport("applicants")
@@ -909,7 +918,7 @@ function Exporter:CreateFrame()
 
   local exportPanel = CreateExportPanel(frame)
   exportPanel:SetPoint("TOPLEFT", 18, -92)
-  exportPanel:SetPoint("BOTTOMRIGHT", -34, 18)
+  exportPanel:SetPoint("BOTTOMRIGHT", -34, 94)
 
   local plainPreview = exportPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   plainPreview:SetPoint("TOPLEFT", exportPanel, "TOPLEFT", 8, -8)
@@ -1012,18 +1021,66 @@ function Exporter:CreateFrame()
   scrollFrame:SetVerticalScroll(0)
   scrollFrame:Hide()
 
+  local bridgePanel = CreateExportPanel(frame)
+  bridgePanel:SetHeight(58)
+  bridgePanel:SetPoint("BOTTOMLEFT", 18, 18)
+  bridgePanel:SetPoint("BOTTOMRIGHT", -34, 18)
+
+  local bridgeLabel = bridgePanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  bridgeLabel:SetPoint("TOPLEFT", 10, -8)
+  bridgeLabel:SetJustifyH("LEFT")
+  bridgeLabel:SetText("Live Bridge Text (single line)")
+
+  local bridgeEditBox = CreateFrame("EditBox", nil, bridgePanel, "InputBoxTemplate")
+  bridgeEditBox:SetAutoFocus(false)
+  if bridgeEditBox.SetFont then
+    bridgeEditBox:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 12, "")
+  else
+    bridgeEditBox:SetFontObject(GameFontHighlightSmall)
+  end
+  if bridgeEditBox.SetMaxLetters then
+    bridgeEditBox:SetMaxLetters(999999)
+  end
+  bridgeEditBox:SetHeight(24)
+  bridgeEditBox:SetPoint("TOPLEFT", bridgeLabel, "BOTTOMLEFT", 0, -6)
+  bridgeEditBox:SetPoint("RIGHT", bridgePanel, "RIGHT", -10, 0)
+  bridgeEditBox:SetJustifyH("LEFT")
+  bridgeEditBox:SetTextColor(1, 0.96, 0.78, 1)
+  if bridgeEditBox.SetPropagateKeyboardInput then
+    bridgeEditBox:SetPropagateKeyboardInput(false)
+  end
+
+  bridgeEditBox:SetScript("OnKeyDown", function(self, key)
+    if key == "C" and IsControlKeyDown() then
+      self:HighlightText()
+      return true
+    end
+    if key == "A" and IsControlKeyDown() then
+      self:HighlightText()
+      return true
+    end
+  end)
+
+  bridgeEditBox:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+  end)
+
   self.frame = frame
   self.scrollFrame = scrollFrame
   self.scrollChild = scrollChild
   self.plainPreview = plainPreview
   self.preview = preview
   self.editBox = editBox
+  self.bridgeEditBox = bridgeEditBox
   self.status = frame.status
 end
 
 function Exporter:SetExportText(text)
   text = tostring(text or "")
+  local previewHadFocus = self.editBox and self.editBox.HasFocus and self.editBox:HasFocus()
+  local bridgeHadFocus = self.bridgeEditBox and self.bridgeEditBox.HasFocus and self.bridgeEditBox:HasFocus()
   self.lastExportText = text
+  self.lastEncodedExportText = EncodedExportTextOrEmpty(text)
   if DB then
     DB.lastExport = text
   end
@@ -1043,6 +1100,11 @@ function Exporter:SetExportText(text)
     self.editBox:Show()
   end
 
+  if self.bridgeEditBox then
+    self.bridgeEditBox:SetText(self.lastEncodedExportText or "")
+    self.bridgeEditBox:SetCursorPosition(0)
+  end
+
   local contentHeight = 2000
   if self.preview and self.preview.GetStringHeight then
     contentHeight = math.max(contentHeight, (self.preview:GetStringHeight() or 0) + 24)
@@ -1060,6 +1122,16 @@ function Exporter:SetExportText(text)
   if self.scrollFrame then
     self.scrollFrame:UpdateScrollChildRect()
     self.scrollFrame:SetVerticalScroll(0)
+  end
+
+  if previewHadFocus and self.editBox then
+    self.editBox:SetFocus()
+    self.editBox:SetCursorPosition(0)
+    self.editBox:HighlightText()
+  elseif bridgeHadFocus and self.bridgeEditBox then
+    self.bridgeEditBox:SetFocus()
+    self.bridgeEditBox:SetCursorPosition(0)
+    self.bridgeEditBox:HighlightText()
   end
 end
 
@@ -1179,6 +1251,30 @@ function Exporter:FocusExportText(statusText)
   end
 end
 
+function Exporter:FocusBridgeExportText(statusText)
+  if not self.bridgeEditBox then
+    return
+  end
+
+  self.bridgeEditBox:SetText(self.lastEncodedExportText or EncodedExportTextOrEmpty(self.lastExportText))
+  self.bridgeEditBox:SetFocus()
+  self.bridgeEditBox:SetCursorPosition(0)
+  self.bridgeEditBox:HighlightText()
+  if self.status then
+    self.status:SetText(statusText or "Live bridge text selected. Press Ctrl+C now, then paste into the website.")
+  end
+
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0.05, function()
+      if Exporter.bridgeEditBox and Exporter.frame and Exporter.frame:IsShown() then
+        Exporter.bridgeEditBox:SetFocus()
+        Exporter.bridgeEditBox:SetCursorPosition(0)
+        Exporter.bridgeEditBox:HighlightText()
+      end
+    end)
+  end
+end
+
 function Exporter:OpenCopyPopup()
   EnsureCopyPopup()
   if StaticPopup_Show then
@@ -1211,13 +1307,11 @@ function Exporter:CopyExportText()
     return
   end
 
-  self:ShowCopyFrame(text)
-  if self.status then
-    self.status:SetText("Copy window opened. Press Ctrl+C there, then paste into the website.")
-  end
+  self:FocusBridgeExportText("Live bridge text selected. Press Ctrl+C there, then paste into the website.")
 end
 
-function Exporter:OpenCopyForText(text, statusText)
+function Exporter:OpenCopyForText(text, statusText, options)
+  options = options or {}
   text = tostring(text or "")
   if text == "" then
     return
@@ -1225,10 +1319,18 @@ function Exporter:OpenCopyForText(text, statusText)
 
   EnsureDB()
   self:CreateFrame()
-  self:SetExportText(text)
-  self:ShowCopyFrame(text)
+  local shouldFocusBridge = options.focusBridge
+  if shouldFocusBridge == nil then
+    shouldFocusBridge = not (self.frame and self.frame:IsShown())
+      or (self.bridgeEditBox and self.bridgeEditBox.HasFocus and self.bridgeEditBox:HasFocus())
+  end
 
-  if self.status and self.frame and self.frame:IsShown() and statusText then
+  self:SetExportText(text)
+  self.frame:Show()
+
+  if shouldFocusBridge then
+    self:FocusBridgeExportText(statusText)
+  elseif self.status and statusText then
     self.status:SetText(statusText)
   end
 end
@@ -1238,7 +1340,7 @@ function Exporter:OpenCurrentCopyExport(options)
   EnsureDB()
 
   local text, status = self:ExportBoth(options)
-  self:OpenCopyForText(text, status .. " Copy window opened; press Ctrl+C.")
+  self:OpenCopyForText(text, status .. " Live bridge text selected; press Ctrl+C.")
 end
 
 function Exporter:QueueApplicantAutoCopy(newApplicantCount)
@@ -1369,7 +1471,7 @@ function Exporter:SetDebugApplicantSimulator(enabled)
   DB.debugApplicantSimulator = enabled and true or false
 
   if DB.debugApplicantSimulator then
-    Print("Debug applicant simulator is ON. It will open a fresh copy box every " .. tostring(DEBUG_AUTO_INTERVAL_SECONDS) .. " seconds.")
+    Print("Debug applicant simulator is ON. It will refresh the live bridge text every " .. tostring(DEBUG_AUTO_INTERVAL_SECONDS) .. " seconds.")
     self:ScheduleDebugApplicantSimulator(true)
   else
     Print("Debug applicant simulator is OFF.")
@@ -1386,7 +1488,7 @@ function Exporter:ShowLastExport()
   self.frame:Show()
   if self.status then
     if text ~= "" then
-      self.status:SetText("Loaded the last saved export. Click Copy, press Ctrl+C, then paste into the website.")
+      self.status:SetText("Loaded the last saved export. Click Copy or press Ctrl+C in the live bridge box, then paste into the website.")
     else
       self.status:SetText("No previous export is saved yet. Use /raa while your listing is active.")
     end
@@ -1402,7 +1504,7 @@ function Exporter:ShowDebugExport()
   self:SetExportText(DebugFixtureText())
   self.frame:Show()
   if self.status then
-    self.status:SetText("Loaded debug fixture with stable roster and changing applicants. Click Copy, then press Ctrl+C.")
+    self.status:SetText("Loaded debug fixture with stable roster and changing applicants. Click Copy or press Ctrl+C in the live bridge box.")
   end
 end
 
@@ -1445,7 +1547,7 @@ function Exporter:ShowExport(mode, options)
     target = "Applicants"
   end
 
-  self.status:SetText(status .. " Click Copy, press Ctrl+C, then paste into the website's " .. target .. " box.")
+  self.status:SetText(status .. " Click Copy or press Ctrl+C in the live bridge box, then paste into the website's " .. target .. " box.")
   self.frame:Show()
 end
 
