@@ -32,7 +32,7 @@
     3: 0.10,
     4: 0.10,
   };
-  const WANTED_DPS_CLASS_BONUS_POINTS = 10;
+  const WANTED_CLASS_BONUS_POINTS = 10;
   const SAME_TIER_BOSS_FALLBACK_MULTIPLIER = 0.5;
   const RAID_DIFFICULTIES = [5, 4, 3, 2];
   const DIFFICULTY_KEYS = {
@@ -1155,8 +1155,13 @@
     syncWantedDpsClassChipsUi();
 
     if (state.latestAnalysis) {
-      renderRecommendations(state.latestAnalysis);
-      renderComposition(state.latestAnalysis);
+      const analysis = recommendApplicants({
+        target: state.latestAnalysis.target,
+        roster: state.latestAnalysis.roster,
+        applicants: filterApplicantDecisionApplicants(state.latestAnalysis.applicants),
+      });
+      state.latestAnalysis = analysis;
+      render(analysis);
     }
   }
 
@@ -2581,7 +2586,7 @@
     const kills = isMplusMode ? disabledScore() : killScore(applicant, context.target);
     const raiderIo = raiderIoScore(applicant, context.target);
     const buffs = isMplusMode ? disabledScore() : buffScore(applicant, context.currentBuffs);
-    const preference = isMplusMode ? disabledScore() : wantedDpsClassPreferenceScore(applicant, context);
+    const preference = isMplusMode ? disabledScore() : wantedClassPreferenceScore(applicant, context);
     const exactContributions = {
       parse: parse.points * (weights.parse || 0),
       kills: kills.points * (weights.kills || 0),
@@ -2620,10 +2625,10 @@
     };
   }
 
-  function wantedDpsClassPreferenceScore(applicant, context) {
+  function wantedClassPreferenceScore(applicant, context) {
     if (!context || context.applyPreferenceBonus === false) return disabledScore();
     if (!context.target || context.target.scoreMode !== SCORE_MODE_RAID) return disabledScore();
-    if (!applicant || applicant.role !== "DPS") return disabledScore();
+    if (!applicant) return disabledScore();
 
     const className = normalizeWantedDpsClass(applicant.className);
     if (!className) return disabledScore();
@@ -2636,8 +2641,8 @@
     if (!desiredCount) return disabledScore();
 
     return {
-      points: WANTED_DPS_CLASS_BONUS_POINTS,
-      reasons: [`wanted DPS: ${className}${desiredCount > 1 ? ` (${desiredCount} slots)` : ""}`],
+      points: WANTED_CLASS_BONUS_POINTS,
+      reasons: [`wanted class: ${className}${desiredCount > 1 ? ` (${desiredCount} slots)` : ""}`],
       warnings: [],
       desiredCount,
     };
@@ -4936,6 +4941,18 @@
     }
 
     return null;
+  }
+
+  function averageNumber(values) {
+    const numbers = (Array.isArray(values) ? values : [])
+      .map((value) => {
+        if (value === null || value === undefined || value === "") return null;
+        const number = Number(value);
+        return Number.isFinite(number) ? number : null;
+      })
+      .filter((value) => value !== null);
+    if (!numbers.length) return null;
+    return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
   }
 
   function numberOrZero(value) {
